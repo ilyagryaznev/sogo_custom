@@ -60,7 +60,7 @@
 + (id) sharedSOGoWebAuthenticator
 {
   static SOGoWebAuthenticator *auth = nil;
- 
+
   if (!auth)
     auth = [self new];
 
@@ -69,11 +69,11 @@
 
 - (BOOL) checkLogin: (NSString *) _login
            password: (NSString *) _pwd
-{ 
+{
   NSString *username, *password, *domain, *value;
   SOGoPasswordPolicyError perr;
   int expire, grace;
- 
+
 
   // We check for the existence of the session in the database/memcache
   // and we extract the real password from it. Here,
@@ -142,7 +142,7 @@
   BOOL rc;
 
   sd = [SOGoSystemDefaults sharedSystemDefaults];
-  
+
   //Basic check
   if(!_login)
     return NO;
@@ -203,7 +203,7 @@
                                           additionalInfo: _additionalInfo
                                                 useCache: _useCache];
   //[self logWithFormat: @"Checked login with ppolicy enabled: %d %d %d", *_perr, *_expire, *_grace];
-  
+
   // It's important to return the real value here. The callee will handle
   // the return code and check for the _perr value.
   return rc;
@@ -241,7 +241,7 @@
   if ([creds count] > 1)
     {
       NSString *login, *domain;
-      
+
       [SOGoSession decodeValue: [SOGoSession valueForSessionKey: [creds objectAtIndex: 1]]
                       usingKey: [creds objectAtIndex: 0]
                          login: &login
@@ -265,16 +265,16 @@
 
   SOGoPasswordPolicyError perr;
   int expire, grace;
-  
+
   if (![(creds = [self parseCredentials:_creds]) isNotEmpty])
     return nil;
 
   userKey = [creds objectAtIndex:0];
   if ([userKey isEqualToString:@"anonymous"])
     return @"anonymous";
-  
+
   sessionKey = [creds objectAtIndex:1];
-  
+
   [SOGoSession decodeValue: [SOGoSession valueForSessionKey: sessionKey]
                   usingKey: userKey
                      login: &login
@@ -290,7 +290,7 @@
                   grace: &grace
          additionalInfo: nil])
     return nil;
-  
+
   if (domain && [login rangeOfString: @"@"].location == NSNotFound)
     login = [NSString stringWithFormat: @"%@@%@", login, domain];
 
@@ -307,7 +307,7 @@
   SOGoUser *user;
   NSRange r;
   NSString *loginDomain, *login;
- 
+
   password = [self passwordInContext: context];
   if ([password length])
     {
@@ -455,6 +455,7 @@
 {
   WOCookie *authCookie;
   NSString *cookieValue, *cookieString, *appName, *sessionKey, *userKey, *securedPassword;
+  NSCalendarDate *expirationDate;
   BOOL isSecure;
 
   //
@@ -483,16 +484,27 @@
   cookieValue = [NSString stringWithFormat: @"basic %@",
                           [cookieString stringByEncodingBase64]];
   isSecure = [[[context serverURL] scheme] isEqualToString: @"https"];
+
+  // Set cookie expiration to 10 years in the future to make it persistent
+  expirationDate = [NSCalendarDate calendarDate];
+  [expirationDate setTimeZone: [NSTimeZone timeZoneForSecondsFromGMT: 0]];
+  expirationDate = [expirationDate dateByAddingYears: 10
+                                              months: 0
+                                                days: 0
+                                               hours: 0
+                                             minutes: 0
+                                             seconds: 0];
+
   authCookie = [WOCookie cookieWithName: [self cookieNameInContext: context]
                                   value: cookieValue
                                    path: nil
                                  domain: nil
-                                expires: nil
+                                expires: expirationDate
                                isSecure: isSecure
                                httpOnly: YES];
   appName = [[context request] applicationName];
   [authCookie setPath: [NSString stringWithFormat: @"/%@/", appName]];
-  
+
   return authCookie;
 }
 
