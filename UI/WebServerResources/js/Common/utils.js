@@ -166,14 +166,18 @@ String.prototype.asCSSIdentifier = function() {
 };
 
 String.prototype.timeInterval = function () {
-  var interval;
+  var interval, match;
+
   if (this == "once_per_hour")
     interval = 3600;
   else if (this == "every_minute")
     interval = 60;
-  else {
-    interval = parseInt(this.substr(6)) * 60;
-  }
+  else if ((match = this.match(/^every_(\d+)_seconds$/)))
+    interval = parseInt(match[1], 10);
+  else if ((match = this.match(/^every_(\d+)_minutes$/)))
+    interval = parseInt(match[1], 10) * 60;
+  else
+    interval = parseInt(this.substr(6), 10) * 60;
 
   return interval;
 };

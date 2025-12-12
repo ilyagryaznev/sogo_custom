@@ -107,7 +107,7 @@
     SOGoIMAPServer = "localhost";
     SOGoMailDomain = "localhost";
     SOGoSelectedAddressBook = "collected";
-    SOGoRefreshViewCheck = "manually";
+    SOGoRefreshViewCheck = "every_5_seconds";
     SOGoMailMessageForwarding = "inline";
     SOGoMailReplyPlacement = "below";
     SOGoMailSignaturePlacement = "below";
