@@ -36,8 +36,7 @@
                   md-colors="::{ backgroundColor: 'default-background-300' }">
         <section class="sg-account-section"
                  layout="column"
-                 ng-repeat="account in ::app.accounts track by account.id"
-                 ng-class="{ 'md-flex': account.$expanded }">
+                 ng-repeat="account in ::app.accounts track by account.id">
           <md-list class="md-dense">
             <md-list-item ng-click="app.toggleAccountState(account)">
               <div class="sg-no-wrap"
@@ -95,19 +94,19 @@
                  ng-show="account.$expanded"
                  ng-class="{ 'md-warn': account.$quota.percent > 70 }">{{account.$quota.description}}</div>
           </div>
-          <md-virtual-repeat-container class="md-flex">
+          <div class="sg-account-folders" ng-if="account.$expanded">
             <md-list class="md-dense">
               <md-list-item
                   class="sg-mailbox-list-item md-clickable md-default-theme md-background md-hue-1"
                   ng-class="{'md-bg sg-selected': folder.id == app.service.selectedFolder.id}"
-                  md-virtual-repeat="folder in account" md-item-size="40" md-on-demand="md-on-demand"
+                  ng-repeat="folder in (account.$$flattenMailboxes || account.$flattenMailboxes()) track by folder.id"
                   sg-mailbox="folder"
                   sg-droppable="app.isDroppableFolder(dragFolder, folder)"
                   sg-drop="app.dragSelectedMessages(dragFolder, folder, dragMode)">
                 <!-- sgMailboxListItem directive -->
               </md-list-item>
             </md-list>
-          </md-virtual-repeat-container>
+          </div>
           <md-divider><!-- divider --></md-divider>
         </section>
       </md-content>
