@@ -1,0 +1,33 @@
+<VirtualHost *:80>
+    ServerName localhost
+
+    DocumentRoot /usr/local/lib/GNUstep/SOGo/WebServerResources
+
+    <Directory /usr/local/lib/GNUstep/SOGo/WebServerResources>
+        Options +FollowSymLinks
+        AllowOverride None
+        Require all granted
+    </Directory>
+
+    # SOGo Web Interface
+    Alias /SOGo /usr/local/lib/GNUstep/SOGo/WebServerResources
+
+    # SOGo API
+    ProxyPass /SOGo.woa http://127.0.0.1:20000/SOGo.woa
+    ProxyPassReverse /SOGo.woa http://127.0.0.1:20000/SOGo.woa
+
+    # SOGo DAV
+    ProxyPass /SOGo/dav http://127.0.0.1:20000/SOGo/dav
+    ProxyPassReverse /SOGo/dav http://127.0.0.1:20000/SOGo/dav
+
+    # SOGo Microsoft ActiveSync
+    ProxyPass /Microsoft-Server-ActiveSync http://127.0.0.1:20000/Microsoft-Server-ActiveSync
+    ProxyPassReverse /Microsoft-Server-ActiveSync http://127.0.0.1:20000/Microsoft-Server-ActiveSync
+
+    ErrorLog ${APACHE_LOG_DIR}/sogo_error.log
+    CustomLog ${APACHE_LOG_DIR}/sogo_access.log combined
+</VirtualHost>
+
+# Убирает предупреждение FQDN
+ServerName localhost
+

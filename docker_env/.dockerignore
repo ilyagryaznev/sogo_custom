@@ -1,0 +1,10 @@
+node_modules
+.git
+*.log
+*.swp
+*.swo
+.DS_Store
+sogo_data
+sogo_logs
+postgres_data
+
