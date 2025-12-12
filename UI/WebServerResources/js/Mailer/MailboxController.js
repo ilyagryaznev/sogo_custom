@@ -57,7 +57,13 @@
       });
 
       // Update window's title with unseen messages count of selected mailbox
-      $scope.$watch(function() { return vm.selectedFolder.unseenCount; }, function(unseenCount) {
+      $scope.$watch(function() {
+        if (!vm.selectedFolder)
+          return 0;
+        if (angular.isFunction(vm.selectedFolder.$displayUnseenCount))
+          return vm.selectedFolder.$displayUnseenCount();
+        return vm.selectedFolder.unseenCount;
+      }, function(unseenCount) {
         var title = '';
         if (unseenCount)
           title += '(' + unseenCount + ') ';

@@ -31,10 +31,10 @@
         '    ng-click="$ctrl.selectFolder($event)"',
         '    ng-dblclick="$ctrl.editFolder($event)">',
         '    <md-icon ng-class="{ \'sg-opacity-70\': $ctrl.mailbox.isNoSelect() }">{{$ctrl.mailbox.$icon}}</md-icon>',
-        '    <span ng-class="{ \'sg-font-medium\': $ctrl.mailbox.unseenCount }" ng-bind="$ctrl.mailbox.$displayName"></span>',
+        '    <span ng-class="{ \'sg-font-medium\': $ctrl.displayUnseenCount() }" ng-bind="$ctrl.mailbox.$displayName"></span>',
         '    <span class="sg-counter-badge ng-hide"',
-        '          ng-show="$ctrl.mailbox.unseenCount"',
-        '          ng-bind="$ctrl.mailbox.unseenCount"></span>',
+        '          ng-show="$ctrl.displayUnseenCount()"',
+        '          ng-bind="$ctrl.displayUnseenCount()"></span>',
         '  </p>',
         '  <md-input-container class="md-flex ng-hide">',
         '    <input class="sg-item-name" type="text"',
@@ -80,6 +80,13 @@
 
     this.childLevel = function() {
       return 'sg-child-level-' + this.mailbox.level;
+    };
+
+
+    this.displayUnseenCount = function() {
+      if (angular.isFunction($ctrl.mailbox.$displayUnseenCount))
+        return $ctrl.mailbox.$displayUnseenCount();
+      return $ctrl.mailbox.unseenCount;
     };
 
 

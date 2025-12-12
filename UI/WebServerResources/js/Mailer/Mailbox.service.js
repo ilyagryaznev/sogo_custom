@@ -238,6 +238,42 @@
   };
 
   /**
+   * @function $displayUnseenCount
+   * @memberof Mailbox.prototype
+   * @desc Compute the unread count to display. For inbox, aggregates unread
+   *       from all folders except spam/junk.
+   * @returns number of unread messages to display
+   */
+  Mailbox.prototype.$displayUnseenCount = function() {
+    if (this.type != 'inbox' || !this.$account || !this.$account.$mailboxes) {
+      return this.unseenCount || 0;
+    }
+
+    var total = 0,
+        isSpamFolder = function(mailbox) {
+          if (!mailbox)
+            return false;
+          var name = (mailbox.name || mailbox.$displayName || '').toLowerCase();
+          return mailbox.type == 'junk' || name == 'spam' || name == 'junk' || name == 'спам';
+        },
+        visit = function(mailboxes) {
+          _.forEach(mailboxes, function(box) {
+            if (!isSpamFolder(box) && angular.isDefined(box.unseenCount)) {
+              var count = parseInt(box.unseenCount, 10);
+              if (!isNaN(count))
+                total += count;
+            }
+            if (box && box.children && box.children.length > 0)
+              visit(box.children);
+          });
+        };
+
+    visit(this.$account.$mailboxes);
+
+    return total;
+  };
+
+  /**
    * @function selectFolder
    * @memberof Mailbox.prototype
    * @desc Mark the folder as selected in the constructor unless virtual mode is active
