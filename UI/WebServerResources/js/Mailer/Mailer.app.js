@@ -350,8 +350,8 @@
   /**
    * @ngInject
    */
-  runBlock.$inject = ['$window', '$transitions', '$log', '$state', 'Mailbox'];
-  function runBlock($window, $transitions, $log, $state, Mailbox) {
+  runBlock.$inject = ['$window', '$transitions', '$log', '$state', '$timeout', 'Mailbox', 'Preferences'];
+  function runBlock($window, $transitions, $log, $state, $timeout, Mailbox, Preferences) {
     if (!$window.DebugEnabled)
       $state.defaultErrorHandler(function() {
         // Don't report any state error
@@ -368,6 +368,14 @@
         $state.go('mail');
       }
     });
+
+    // Initialize auto-refresh for inbox
+    $timeout(function() {
+      var refreshViewCheck = Preferences.defaults.SOGoRefreshViewCheck || 'every_5_seconds';
+      if (refreshViewCheck && refreshViewCheck != 'manually') {
+        Preferences.pollInbox();
+      }
+    }, 2000);
   }
 
 })();

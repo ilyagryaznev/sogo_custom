@@ -42,6 +42,11 @@
 
       _registerHotkeys(hotkeys);
 
+      // Start auto-refresh for INBOX
+      if (this.selectedFolder && this.selectedFolder.path === 'INBOX') {
+        Preferences.pollInbox();
+      }
+
       // Expunge mailbox when leaving the Mail module
       angular.element($window).on('beforeunload', _compactBeforeUnload);
       $scope.$on('$destroy', function() {

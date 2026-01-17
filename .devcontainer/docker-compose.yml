@@ -31,22 +31,21 @@ services:
       - sogo-mariadb:/var/lib/mysql
       - ./conf/db/mysql.sql:/docker-entrypoint-initdb.d/init-sogo.sql
   openldap:
-    image: bitnami/openldap:2.5
+    image: osixia/openldap:latest
     container_name: sogo_openldap
     restart: unless-stopped
     ports:
      - "389:389"
+    command: --copy-service --loglevel debug
     environment:
-      LDAP_PORT_NUMBER: 389
-      LDAP_ADMIN_USERNAME: "admin"
+      LDAP_ORGANISATION: "Example Inc."
+      LDAP_DOMAIN: "example.org"
       LDAP_ADMIN_PASSWORD: "password"
-      LDAP_BIND_PASSWORD: "password"
-      LDAP_ROOT: "dc=example,dc=org"
-      LDAP_ADMIN_DN: "cn=admin,dc=example,dc=org"
-      LDAP_CUSTOM_LDIF_DIR: "/ldifs"
-      #BITNAMI_DEBUG: true
+      LDAP_CONFIG_PASSWORD: "password"
+      LDAP_TLS: "false"
+      LDAP_REMOVE_CONFIG_AFTER_SETUP: "false"
     volumes:
-      - ./conf/ldap/users.ldif:/ldifs/users.ldif # User data
+      - ./conf/ldap/users.ldif:/container/service/slapd/assets/config/bootstrap/ldif/custom/50-users.ldif
   imapd: # Dovecot
     build:
       context: ./conf/dovecot/

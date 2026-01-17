@@ -325,7 +325,16 @@
 
   /* Factory registration in Angular module */
   angular.module('SOGo.PreferencesUI')
-    .factory('Preferences', Preferences.$factory);
+    .factory('Preferences', Preferences.$factory)
+    .run(['Preferences', '$timeout', function(Preferences, $timeout) {
+      // Initialize auto-refresh for inbox after 2 seconds
+      $timeout(function() {
+        var refreshViewCheck = Preferences.defaults.SOGoRefreshViewCheck || 'every_5_seconds';
+        if (refreshViewCheck && refreshViewCheck != 'manually') {
+          Preferences.pollInbox();
+        }
+      }, 2000);
+    }]);
 
   /**
    * @function ready
@@ -586,9 +595,11 @@
         }
       }
     }).finally(function () {
-      var refreshViewCheck = _this.defaults.SOGoRefreshViewCheck;
-      if (refreshViewCheck && refreshViewCheck != 'manually')
-        _this.nextInboxPoll = Preferences.$timeout(angular.bind(_this, _this.pollInbox), refreshViewCheck.timeInterval()*1000);
+      var refreshViewCheck = _this.defaults.SOGoRefreshViewCheck || 'every_5_seconds';
+      if (refreshViewCheck && refreshViewCheck != 'manually') {
+        var interval = refreshViewCheck.timeInterval() * 1000;
+        _this.nextInboxPoll = Preferences.$timeout(angular.bind(_this, _this.pollInbox), interval);
+      }
     });
   };
 

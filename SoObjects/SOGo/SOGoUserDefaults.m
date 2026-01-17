@@ -563,7 +563,10 @@ NSString *SOGoPasswordRecoverySecondaryEmail = @"SecondaryEmail";
 
 - (NSString *) refreshViewCheck
 {
-  return [self stringForKey: @"SOGoRefreshViewCheck"];
+  NSString *value = [self stringForKey: @"SOGoRefreshViewCheck"];
+  if (!value)
+    value = @"every_5_seconds";
+  return value;
 }
 
 - (BOOL) gravatarEnabled
