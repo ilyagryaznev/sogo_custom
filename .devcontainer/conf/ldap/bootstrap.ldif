@@ -1,0 +1,39 @@
+dn: ou=users,dc=example,dc=org
+objectClass: organizationalUnit
+ou: users
+
+dn: uid=sogo-tests1,ou=users,dc=example,dc=org
+objectClass: inetOrgPerson
+objectClass: top
+uid: sogo-tests1
+cn: SOGo Test User 1
+sn: User1
+mail: sogo-tests1@example.org
+userPassword: sogo123
+
+dn: uid=sogo-tests2,ou=users,dc=example,dc=org
+objectClass: inetOrgPerson
+objectClass: top
+uid: sogo-tests2
+cn: SOGo Test User 2
+sn: User2
+mail: sogo-tests2@example.org
+userPassword: sogo123
+
+dn: uid=sogo-tests3,ou=users,dc=example,dc=org
+objectClass: inetOrgPerson
+objectClass: top
+uid: sogo-tests3
+cn: SOGo Test User 3
+sn: User3
+mail: sogo-tests3@example.org
+userPassword: sogo123
+
+dn: uid=sogo-tests-super,ou=users,dc=example,dc=org
+objectClass: inetOrgPerson
+objectClass: top
+uid: sogo-tests-super
+cn: SOGo Super User
+sn: SuperUser
+mail: sogo-tests-super@example.org
+userPassword: sogo123
