@@ -616,14 +616,14 @@
   NSString *destinationFolder;
   SOGoMailAccount *account;
   WOResponse *response;
-  SOGoMailFolder *co;
-  NSDictionary *data;
+  SOGoMailFolder *co, *destFolder;
+  NSMutableDictionary *data;
   NSArray *uids;
 
   id quota;
 
   co = [self clientObject];
-  data = [[[context request] contentAsString] objectFromJSONString];
+  data = [[[[context request] contentAsString] objectFromJSONString] mutableCopy];
   uids = [data objectForKey: @"uids"];
   destinationFolder = [data objectForKey: @"folder"];
   response = nil;
@@ -637,11 +637,21 @@
           account = [co mailAccountFolder];
           if ((quota = [account getInboxQuota]))
             {
-              data = [NSDictionary dictionaryWithObject: quota  forKey: @"quotas"];
-              response = [self responseWithStatus: 200 andJSONRepresentation: data];
+              [data setObject: quota forKey: @"quotas"];
             }
-          else
-            response = [self responseWithStatus: 200];
+
+          // Get destination folder unseen count
+          destFolder = [account lookupName: [NSString stringWithFormat: @"folder%@", destinationFolder]
+                                 inContext: context
+                                   acquire: NO];
+          if (destFolder)
+            {
+              [data setObject: [NSNumber numberWithUnsignedInt: [destFolder unseenCount]]
+                       forKey: @"destinationUnseenCount"];
+              [data setObject: destinationFolder forKey: @"destinationFolder"];
+            }
+
+          response = [self responseWithStatus: 200 andJSONRepresentation: data];
         }
       else
         {
@@ -669,7 +679,8 @@
   SOGoUserSettings *us=nil;
   WOResponse *response;
   NSDictionary *data;
-  SOGoMailFolder *co;
+  SOGoMailFolder *co, *destFolder;
+  SOGoMailAccount *account;
   NSArray *uids;
 
   int i;
@@ -702,8 +713,18 @@
                   [us synchronize];
                 }
             }
-          data = [NSDictionary dictionaryWithObject: [NSNumber numberWithUnsignedInt: [co unseenCount]]
-                                             forKey: @"unseenCount"];
+
+          // Get destination folder unseen count
+          account = [co container];
+          destFolder = [account lookupName: [NSString stringWithFormat: @"folder%@", destinationFolder]
+                                 inContext: context
+                                   acquire: NO];
+
+          data = [NSDictionary dictionaryWithObjectsAndKeys:
+                    [NSNumber numberWithUnsignedInt: [co unseenCount]], @"unseenCount",
+                    [NSNumber numberWithUnsignedInt: [destFolder unseenCount]], @"destinationUnseenCount",
+                    destinationFolder, @"destinationFolder",
+                    nil];
           response = [self responseWithStatus: 200 andJSONRepresentation: data];
         }
       else

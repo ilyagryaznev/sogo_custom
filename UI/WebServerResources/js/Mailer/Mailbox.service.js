@@ -268,8 +268,7 @@
           });
         };
 
-    visit(this.$account.$mailboxes);
-
+    visit([this]);
     return total;
   };
 
@@ -993,6 +992,13 @@
         // Update inbox quota
         if (data.quotas)
           _this.$account.updateQuota(data.quotas);
+        // Update destination folder unseen count
+        if (angular.isDefined(data.destinationUnseenCount) && angular.isDefined(data.destinationFolder)) {
+          var destMailbox = _this.$account.$getMailboxByPath(data.destinationFolder);
+          if (destMailbox) {
+            destMailbox.unseenCount = data.destinationUnseenCount;
+          }
+        }
       });
   };
 
@@ -1010,6 +1016,13 @@
       .then(function(data) {
         if (angular.isDefined(data.unseenCount)) {
           _this.unseenCount = data.unseenCount;
+        }
+        // Update destination folder unseen count
+        if (angular.isDefined(data.destinationUnseenCount) && angular.isDefined(data.destinationFolder)) {
+          var destMailbox = _this.$account.$getMailboxByPath(data.destinationFolder);
+          if (destMailbox) {
+            destMailbox.unseenCount = data.destinationUnseenCount;
+          }
         }
         _this.$selectedMessages = []; // reset selection
         return _this.$_deleteMessages(uids);

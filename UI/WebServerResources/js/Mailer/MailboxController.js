@@ -42,15 +42,40 @@
 
       _registerHotkeys(hotkeys);
 
-      // Start auto-refresh for INBOX
+      // Start auto-refresh for current folder
+      var startAutoRefresh = function() {
+        var refreshViewCheck = Preferences.defaults.SOGoRefreshViewCheck || 'every_5_seconds';
+        if (refreshViewCheck && refreshViewCheck != 'manually' && vm.selectedFolder) {
+          var interval = refreshViewCheck.timeInterval() * 1000;
+          vm.autoRefreshTimer = Mailbox.$timeout(function() {
+            // Refresh current folder
+            if (vm.selectedFolder) {
+              vm.selectedFolder.$filter();
+            }
+            // Refresh unseen counts for all folders
+            Account.refreshUnseenCount($window.unseenCountFolders);
+            // Schedule next refresh
+            startAutoRefresh();
+          }, interval);
+        }
+      };
+
+      // Start auto-refresh for INBOX (for notifications)
       if (this.selectedFolder && this.selectedFolder.path === 'INBOX') {
         Preferences.pollInbox();
       }
+
+      // Start auto-refresh for all folders
+      startAutoRefresh();
 
       // Expunge mailbox when leaving the Mail module
       angular.element($window).on('beforeunload', _compactBeforeUnload);
       $scope.$on('$destroy', function() {
         angular.element($window).off('beforeunload', _compactBeforeUnload);
+        // Cancel auto-refresh timer
+        if (vm.autoRefreshTimer) {
+          Mailbox.$timeout.cancel(vm.autoRefreshTimer);
+        }
         // Deregister hotkeys
         _.forEach(hotkeys, function(key) {
           sgHotkeys.deregisterHotkey(key);
