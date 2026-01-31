@@ -42,30 +42,37 @@
 
       _registerHotkeys(hotkeys);
 
-      // Start auto-refresh for current folder
+      // Start auto-refresh timer for current folder
       var startAutoRefresh = function() {
-        var refreshViewCheck = Preferences.defaults.SOGoRefreshViewCheck || 'every_5_seconds';
+        var refreshViewCheck = Preferences.defaults.SOGoRefreshViewCheck;
         if (refreshViewCheck && refreshViewCheck != 'manually' && vm.selectedFolder) {
           var interval = refreshViewCheck.timeInterval() * 1000;
-          vm.autoRefreshTimer = Mailbox.$timeout(function() {
-            // Refresh current folder
+
+          // Cancel the built-in global refresh timer to avoid double refresh
+          if (Mailbox.$refreshTimeout) {
+            Mailbox.$timeout.cancel(Mailbox.$refreshTimeout);
+            Mailbox.$refreshTimeout = null;
+          }
+
+          vm.autoRefreshTimer = $timeout(function() {
             if (vm.selectedFolder) {
+              // Use incremental update (with syncToken) for smooth, seamless refresh
               vm.selectedFolder.$filter();
+
+              // Hide loading animation for invisible background refresh
+              vm.selectedFolder.$isLoading = false;
+
+              // Cancel the built-in timer again after each refresh
+              if (Mailbox.$refreshTimeout) {
+                Mailbox.$timeout.cancel(Mailbox.$refreshTimeout);
+                Mailbox.$refreshTimeout = null;
+              }
             }
-            // Refresh unseen counts for all folders
-            Account.refreshUnseenCount($window.unseenCountFolders);
-            // Schedule next refresh
             startAutoRefresh();
           }, interval);
         }
       };
 
-      // Start auto-refresh for INBOX (for notifications)
-      if (this.selectedFolder && this.selectedFolder.path === 'INBOX') {
-        Preferences.pollInbox();
-      }
-
-      // Start auto-refresh for all folders
       startAutoRefresh();
 
       // Expunge mailbox when leaving the Mail module
@@ -74,7 +81,7 @@
         angular.element($window).off('beforeunload', _compactBeforeUnload);
         // Cancel auto-refresh timer
         if (vm.autoRefreshTimer) {
-          Mailbox.$timeout.cancel(vm.autoRefreshTimer);
+          $timeout.cancel(vm.autoRefreshTimer);
         }
         // Deregister hotkeys
         _.forEach(hotkeys, function(key) {

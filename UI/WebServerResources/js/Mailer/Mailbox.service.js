@@ -249,27 +249,38 @@
       return this.unseenCount || 0;
     }
 
-    var total = 0,
+    // For INBOX: show "direct_count (subfolders_count)"
+    var inboxCount = parseInt(this.unseenCount, 10) || 0,
+        subfoldersCount = 0,
         isSpamFolder = function(mailbox) {
           if (!mailbox)
             return false;
           var name = (mailbox.name || mailbox.$displayName || '').toLowerCase();
           return mailbox.type == 'junk' || name == 'spam' || name == 'junk' || name == 'спам';
         },
-        visit = function(mailboxes) {
+        visitSubfolders = function(mailboxes) {
           _.forEach(mailboxes, function(box) {
             if (!isSpamFolder(box) && angular.isDefined(box.unseenCount)) {
               var count = parseInt(box.unseenCount, 10);
               if (!isNaN(count))
-                total += count;
+                subfoldersCount += count;
             }
             if (box && box.children && box.children.length > 0)
-              visit(box.children);
+              visitSubfolders(box.children);
           });
         };
 
-    visit([this]);
-    return total;
+    // Count unread in subfolders only (not including INBOX itself)
+    if (this.children && this.children.length > 0) {
+      visitSubfolders(this.children);
+    }
+
+    // Return formatted string: "inbox_only (inbox + subfolders)" or just inbox_only
+    var totalCount = inboxCount + subfoldersCount;
+    if (subfoldersCount > 0) {
+      return inboxCount + ' (' + totalCount + ')';
+    }
+    return inboxCount || 0;
   };
 
   /**
@@ -1174,8 +1185,9 @@
 
         if (!data.uids || _this.$topIndex > data.uids.length - 1)
           _this.$topIndex = 0;
-        if (data.syncToken)
+        if (data.syncToken) {
           _this.$syncToken = data.syncToken;
+        }
 
         if (data.deleted) {
           _.forEachRight(data.deleted, function(uid, i) {
