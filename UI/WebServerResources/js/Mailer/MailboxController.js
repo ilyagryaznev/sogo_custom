@@ -40,6 +40,12 @@
       if (!Mailbox.$virtualMode)
         this.selectedFolder.getLabels(); // fetch labels from server
 
+      // When opening INBOX, immediately refresh all folder unseen counts
+      // to avoid showing stale aggregated values from subfolders
+      if (this.selectedFolder && this.selectedFolder.type === 'inbox') {
+        Account.refreshUnseenCount($window.unseenCountFolders);
+      }
+
       _registerHotkeys(hotkeys);
 
       // Start auto-refresh timer for current folder
@@ -82,6 +88,11 @@
         // Cancel auto-refresh timer
         if (vm.autoRefreshTimer) {
           $timeout.cancel(vm.autoRefreshTimer);
+        }
+        // When leaving a subfolder, pre-fetch fresh unseen counts so INBOX
+        // counter is accurate before it renders (reduces visible flash)
+        if (vm.selectedFolder && vm.selectedFolder.type !== 'inbox') {
+          Account.refreshUnseenCount($window.unseenCountFolders);
         }
         // Deregister hotkeys
         _.forEach(hotkeys, function(key) {
