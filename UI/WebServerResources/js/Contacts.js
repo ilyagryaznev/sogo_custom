@@ -1,2 +1,1345 @@
-(function(){"use strict";angular.module("SOGo.ContactsUI",["ngCookies","ui.router","angularFileUpload","sgCkeditor","SOGo.Common","SOGo.PreferencesUI","SOGo.MailerUI"]).config(configure).run(runBlock);configure.$inject=["$stateProvider","$urlServiceProvider"];function configure($stateProvider,$urlServiceProvider){$stateProvider.state("app",{url:"/addressbooks",abstract:true,views:{addressbooks:{templateUrl:"UIxContactFoldersView",controller:"AddressBooksController",controllerAs:"app"}},resolve:{stateAddressbooks:stateAddressbooks}}).state("app.addressbook",{url:"/:addressbookId",views:{addressbook:{templateUrl:"addressbook",controller:"AddressBookController",controllerAs:"addressbook"}},resolve:{stateAddressbook:stateAddressbook}}).state("app.addressbook.new",{url:"/{contactType:(?:card|list)}/new",params:{refs:{array:true}},views:{card:{templateUrl:"UIxContactEditorTemplate",controller:"CardController",controllerAs:"editor"}},resolve:{stateCard:stateNewCard}}).state("app.addressbook.card",{url:"/:cardId",abstract:true,views:{card:{template:"<ui-view/>"}},resolve:{stateCard:stateCard},onEnter:onEnterCard,onExit:onExitCard}).state("app.addressbook.card.view",{url:"/view",views:{"card@app.addressbook":{templateUrl:"UIxContactViewTemplate",controller:"CardController",controllerAs:"editor"}}}).state("app.addressbook.card.editor",{url:"/edit",views:{"card@app.addressbook":{templateUrl:"UIxContactEditorTemplate",controller:"CardController",controllerAs:"editor"}}});$urlServiceProvider.rules.otherwise({state:"app.addressbook",params:{addressbookId:"personal"}})}stateAddressbooks.$inject=["AddressBook"];function stateAddressbooks(AddressBook){return AddressBook.$findAll(window.contactFolders)}stateAddressbook.$inject=["$q","$state","$stateParams","AddressBook"];function stateAddressbook($q,$state,$stateParams,AddressBook){var addressbook=_.find(AddressBook.$findAll(),function(addressbook){return addressbook.id==$stateParams.addressbookId});if(addressbook){delete addressbook.selectedCard;addressbook.$reload();return addressbook}return $q.reject("Addressbook "+$stateParams.addressbookId+" not found")}stateNewCard.$inject=["$stateParams","stateAddressbook","Card"];function stateNewCard($stateParams,stateAddressbook,Card){var tag="v"+$stateParams.contactType,card=new Card({pid:$stateParams.addressbookId,c_component:tag,refs:$stateParams.refs});stateAddressbook.selectedCard=true;return card}stateCard.$inject=["$state","$stateParams","stateAddressbook"];function stateCard($state,$stateParams,stateAddressbook){return stateAddressbook.$futureAddressBookData.then(function(){var card=_.find(stateAddressbook.$cards,function(cardObject){return cardObject.id==$stateParams.cardId});if(card){return card.$reload()}else{$state.go("app.addressbook")}})}onEnterCard.$inject=["$stateParams","stateAddressbook"];function onEnterCard($stateParams,stateAddressbook){stateAddressbook.selectedCard=$stateParams.cardId}onExitCard.$inject=["stateAddressbook"];function onExitCard(stateMailbox){delete stateAddressbook.selectedCard}runBlock.$inject=["$window","$log","$transitions","$state"];function runBlock($window,$log,$transitions,$state){if(!$window.DebugEnabled)$state.defaultErrorHandler(function(){});$transitions.onError({to:"app.**"},function(transition){if(transition.to().name!="app"&&!transition.ignored()){$log.error("transition error to "+transition.to().name+": "+transition.error().detail);$state.go("app.addressbook",{addressbookId:"personal"})}})}})();(function(){"use strict";AddressBookController.$inject=["$scope","$q","$window","$state","$timeout","$mdDialog","$mdToast","Account","Card","AddressBook","sgFocus","Dialog","sgConstant","sgHotkeys","stateAddressbooks","stateAddressbook"];function AddressBookController($scope,$q,$window,$state,$timeout,$mdDialog,$mdToast,Account,Card,AddressBook,focus,Dialog,sgConstant,sgHotkeys,stateAddressbooks,stateAddressbook){var vm=this,hotkeys=[],sortLabels,defaultWindowTitle=angular.element($window.document).find("title").attr("sg-default")||"SOGo";sortLabels={c_cn:"Name",c_sn:"Lastname",c_givenname:"Firstname",c_mail:"Email",c_screenname:"Screen Name",c_o:"Organization",c_telephonenumber:"Preferred Phone"};this.$onInit=function(){AddressBook.selectedFolder=stateAddressbook;this.service=AddressBook;this.selectedFolder=stateAddressbook;this.mode={search:false,multiple:0};this.allSelected=false;_registerHotkeys(hotkeys);$scope.$on("$destroy",function(){_.forEach(hotkeys,function(key){sgHotkeys.deregisterHotkey(key)})});$scope.$watch(function(){return vm.selectedFolder.name},function(selectedAddressbookName){var title=selectedAddressbookName;title+=" | "+defaultWindowTitle;$window.document.title=title})};function _registerHotkeys(keys){keys.push(sgHotkeys.createHotkey({key:l("hotkey_search"),description:l("Search"),callback:angular.bind(vm,vm.searchMode)}));keys.push(sgHotkeys.createHotkey({key:l("key_create_card"),description:l("Create a new address book card"),callback:angular.bind(vm,vm.newComponent,"card")}));keys.push(sgHotkeys.createHotkey({key:l("key_create_list"),description:l("Create a new list"),callback:angular.bind(vm,vm.newComponent,"list")}));keys.push(sgHotkeys.createHotkey({key:"space",description:l("Toggle item"),callback:angular.bind(vm,vm.toggleCardSelection)}));keys.push(sgHotkeys.createHotkey({key:"shift+space",description:l("Toggle range of items"),callback:angular.bind(vm,vm.toggleCardSelection)}));keys.push(sgHotkeys.createHotkey({key:"up",description:l("View next item"),callback:_nextCard}));keys.push(sgHotkeys.createHotkey({key:"down",description:l("View previous item"),callback:_previousCard}));keys.push(sgHotkeys.createHotkey({key:"shift+up",description:l("Add next item to selection"),callback:_addNextCardToSelection}));keys.push(sgHotkeys.createHotkey({key:"shift+down",description:l("Add previous item to selection"),callback:_addPreviousCardToSelection}));_.forEach(["backspace","delete"],function(hotkey){keys.push(sgHotkeys.createHotkey({key:hotkey,description:l("Delete selected card or address book"),callback:angular.bind(vm,vm.confirmDeleteSelectedCards)}))});_.forEach(keys,function(key){sgHotkeys.registerHotkey(key)})}this.centerIsClose=function(navController_centerIsClose){return this.selectedFolder.hasSelectedCard()&&!!navController_centerIsClose};this.selectCard=function(card){$state.go("app.addressbook.card.view",{cardId:card.id})};this.toggleCardSelection=function($event,card){var folder=this.selectedFolder,selectedIndex,nextSelectedIndex,i;if(!card)card=folder.$selectedCard();card.selected=!card.selected;this.mode.multiple+=card.selected?1:-1;if($event.shiftKey&&folder.$selectedCount()>1){selectedIndex=folder.idsMap[card.id];nextSelectedIndex=selectedIndex-2;while(nextSelectedIndex>=0&&!folder.$cards[nextSelectedIndex].selected)nextSelectedIndex--;if(nextSelectedIndex<0){nextSelectedIndex=selectedIndex+2;while(nextSelectedIndex<folder.getLength()&&!folder.$cards[nextSelectedIndex].selected)nextSelectedIndex++}if(nextSelectedIndex>=0&&nextSelectedIndex<folder.getLength()){for(i=Math.min(selectedIndex,nextSelectedIndex);i<=Math.max(selectedIndex,nextSelectedIndex);i++)folder.$cards[i].selected=true}}$event.preventDefault();$event.stopPropagation()};this.newComponent=function(type){$state.go("app.addressbook.new",{contactType:type})};this.unselectCards=function(){_.forEach(this.selectedFolder.$cards,function(card){card.selected=false});this.mode.multiple=0};function _nextCard($event){var index=vm.selectedFolder.$selectedCardIndex();if(angular.isDefined(index)){index--;if(vm.selectedFolder.$topIndex>0)vm.selectedFolder.$topIndex--}else{index=vm.selectedFolder.$cards.length()-1;vm.selectedFolder.$topIndex=vm.selectedFolder.getLength()}if(index>-1)vm.selectCard(vm.selectedFolder.$cards[index]);$event.preventDefault();return index}function _previousCard($event){var index=vm.selectedFolder.$selectedCardIndex();if(angular.isDefined(index)){index++;if(vm.selectedFolder.$topIndex<vm.selectedFolder.$cards.length)vm.selectedFolder.$topIndex++}else index=0;if(index<vm.selectedFolder.$cards.length)vm.selectCard(vm.selectedFolder.$cards[index]);else index=-1;$event.preventDefault();return index}function _addNextCardToSelection($event){var index;if(vm.selectedFolder.hasSelectedCard()){index=_nextCard($event);if(index>=0)toggleCardSelection($event,vm.selectedFolder.$cards[index])}}function _addPreviousCardToSelection($event){var index;if(vm.selectedFolder.hasSelectedCard()){index=_previousCard($event);if(index>=0)toggleCardSelection($event,vm.selectedFolder.$cards[index])}}this.confirmDeleteSelectedCards=function($event){var selectedCards=this.selectedFolder.$selectedCards();if(this.selectedFolder.acls.objectEraser&&_.size(selectedCards)>0)Dialog.confirm(l("Warning"),l("Are you sure you want to delete the selected contacts?"),{ok:l("Delete")}).then(function(){vm.selectedFolder.$deleteCards(selectedCards).then(function(){vm.mode.multiple=0;if(!vm.selectedFolder.selectedCard)$state.go("app.addressbook")})});$event.preventDefault()};function _selectedCardsOperation(operation,dstId){var srcFolder,allCards,cards,ids,clearCardView,promise,success;srcFolder=vm.selectedFolder;clearCardView=false;allCards=srcFolder.$selectedCards();cards=_.filter(allCards,function(card){return card.$isCard()});if(cards.length!=allCards.length)$mdToast.show($mdToast.simple().textContent(l("Lists can't be moved or copied.")).position(sgConstant.toastPosition).hideDelay(2e3));if(cards.length){if(operation=="copy"){promise=srcFolder.$copyCards(cards,dstId);success=l("%{0} card(s) copied",cards.length)}else{promise=srcFolder.$moveCards(cards,dstId);success=l("%{0} card(s) moved",cards.length);ids=_.map(cards,"id");clearCardView=srcFolder.selectedCard&&ids.indexOf(srcFolder.selectedCard)>=0}promise.then(function(){if(clearCardView)$state.go("app.addressbook");$mdToast.show($mdToast.simple().textContent(success).position(sgConstant.toastPosition).hideDelay(2e3))})}}this.copySelectedCards=function(folder){_selectedCardsOperation("copy",folder)};this.moveSelectedCards=function(folder){_selectedCardsOperation("move",folder)};this.selectAll=function(){_.forEach(this.selectedFolder.$cards,function(card){card.selected=!vm.allSelected});vm.allSelected=!vm.allSelected;this.mode.multiple=this.selectedFolder.$cards.length};this.sort=function(field){if(field){this.selectedFolder.$filter("",{sort:field})}else{return sortLabels[AddressBook.$query.sort]}};this.sortedBy=function(field){return AddressBook.$query.sort==field};this.ascending=function(){return AddressBook.$query.asc};this.searchMode=function($event){vm.mode.search=true;focus("search");if($event)$event.preventDefault()};this.cancelSearch=function(){this.mode.search=false;this.selectedFolder.$filter("")};this.newMessage=function($event,recipients,recipientsField){Account.$findAll().then(function(accounts){var account=_.find(accounts,function(o){if(o.id===0)return o}),onCompleteDeferred=$q.defer();account.$getMailboxes().then(function(mailboxes){account.$newMessage().then(function(message){message.editable[recipientsField]=recipients;$mdDialog.show({parent:angular.element(document.body),targetEvent:$event,clickOutsideToClose:false,escapeToClose:false,templateUrl:"../Mail/UIxMailEditor",controller:"MessageEditorController",controllerAs:"editor",onComplete:function(scope,element){return onCompleteDeferred.resolve(element)},locals:{stateParent:$scope,stateAccount:account,stateMessage:message,onCompletePromise:function(){return onCompleteDeferred.promise}}})})})})};this.newMessageWithRecipient=function($event,recipient,fn){var recipients=[fn+" <"+recipient+">"];this.newMessage($event,recipients,"to");$event.stopPropagation();$event.preventDefault()};this.newMessageWithSelectedCards=function($event,recipientsField){var selectedFolder=this.selectedFolder;var selectedCards=_.filter(this.selectedFolder.$cards,function(card){return card.selected});var promises=[],recipients=[];_.forEach(selectedCards,function(card){if(card.$isList({expandable:true})){if(angular.isDefined(card.refs)&&card.refs.length){_.forEach(card.refs,function(ref){if(ref.email.length)recipients.push(ref.$shortFormat())})}else{promises.push(card.$reload().then(function(card){_.forEach(card.refs,function(ref){if(ref.email.length)recipients.push(ref.$shortFormat())})}))}}else if(card.$loaded==Card.STATUS.LOADED){if(card.c_mail){recipients.push(card.$shortFormat())}}else{selectedFolder.$loadCard(card);promises.push(selectedFolder.$futureHeadersData.then(function(){var i=selectedFolder.idsMap[card.id];if(angular.isDefined(i)){var loadedCard=selectedFolder.$cards[i];if(loadedCard.c_mail)recipients.push(loadedCard.$shortFormat())}}))}});$q.all(promises).then(function(){recipients=_.uniq(recipients);if(recipients.length)vm.newMessage($event,recipients,recipientsField)})};this.newListWithSelectedCards=function(){var _this=this;var selectedCards=_.filter(this.selectedFolder.$cards,function(card){return card.selected});var promises=[],ids=[],refs=[];_.forEach(selectedCards,function(card){if(card.$isList({expandable:true})){if(angular.isDefined(card.refs)&&card.refs.length){_.forEach(card.refs,function(ref){if(ref.email.length)refs.push(ref)})}else{promises.push(card.$reload().then(function(card){_.forEach(card.refs,function(ref){if(ref.email.length)refs.push(ref)})}))}}else if(card.$$email&&card.$$email.length){refs.push(card)}else if(!card.$loaded){refs.push(card);ids.push(card.id)}});if(ids.length){var futureHeadersData=AddressBook.$$resource.post(this.selectedFolder.id,"headers",{ids:ids});promises.push(_this.selectedFolder.$unwrapHeaders(futureHeadersData))}$q.all(promises).then(function(){refs=_.uniqBy(_.map(refs,function(o){return{reference:o.id||o.reference,email:o.$$email||o.email}}),"reference");if(refs.length)$state.go("app.addressbook.new",{contactType:"list",refs:refs})})}}angular.module("SOGo.ContactsUI").controller("AddressBookController",AddressBookController)})();(function(){"use strict";AddressBooksController.$inject=["$q","$state","$scope","$rootScope","$stateParams","$timeout","$window","$mdDialog","$mdToast","$mdMedia","$mdSidenav","FileUploader","sgConstant","sgHotkeys","sgFocus","Card","AddressBook","Dialog","sgSettings","User","stateAddressbooks"];function AddressBooksController($q,$state,$scope,$rootScope,$stateParams,$timeout,$window,$mdDialog,$mdToast,$mdMedia,$mdSidenav,FileUploader,sgConstant,sgHotkeys,focus,Card,AddressBook,Dialog,Settings,User,stateAddressbooks){var vm=this,hotkeys=[];this.$onInit=function(){this.activeUser=Settings.activeUser;this.service=AddressBook;this.saving=false;_registerHotkeys(hotkeys)};this.$onDestroy=function(){_.forEach(hotkeys,function(key){sgHotkeys.deregisterHotkey(key)})};function _registerHotkeys(keys){_.forEach(["backspace","delete"],function(hotkey){keys.push(sgHotkeys.createHotkey({key:hotkey,description:l("Delete selected card or address book"),callback:function(){if(AddressBook.selectedFolder&&!AddressBook.selectedFolder.hasSelectedCard())confirmDelete()}}))});_.forEach(keys,function(key){sgHotkeys.registerHotkey(key)})}this.select=function($event,folder){if($state.params.addressbookId!=folder.id&&this.editMode!=folder.id){this.editMode=false;AddressBook.$query.value="";if(!$mdMedia(sgConstant["gt-md"]))$mdSidenav("left").close();$state.go("app.addressbook",{addressbookId:folder.id})}};this.newAddressbook=function(){Dialog.prompt(l("New Addressbook..."),l("Name of the Address Book")).then(function(name){var addressbook=new AddressBook({name:name,isEditable:true,isRemote:false,owner:UserLogin});addressbook.$id().then(function(){AddressBook.$add(addressbook)}).catch(_.noop)})};this.edit=function(folder){if(!folder.isRemote){this.editMode=folder.id;this.originalAddressbook=folder.$omit();focus("addressBookName_"+folder.id)}};this.revertEditing=function(folder){folder.name=this.originalAddressbook.name;this.editMode=false};this.save=function(folder){var name=folder.name;if(!this.saving&&name&&name.length>0){if(name!=this.originalAddressbook.name){this.saving=true;folder.$rename(name).then(function(data){vm.editMode=false},function(){vm.revertEditing(folder);vm.editMode=folder.id}).finally(function(){vm.saving=false})}else{this.editMode=false}}else{this.revertEditing(folder)}};this.confirmDelete=function(){if(this.service.selectedFolder.isSubscription){this.service.selectedFolder.$delete().then(function(){vm.service.selectedFolder=null;$state.go("app.addressbook",{addressbookId:"personal"})},function(data,status){Dialog.alert(l('An error occured while deleting the addressbook "%{0}".',vm.service.selectedFolder.name),l(data.error))})}else{Dialog.confirm(l("Warning"),l('Are you sure you want to delete the addressbook "%{0}"?',this.service.selectedFolder.name),{ok:l("Delete")}).then(function(){return vm.service.selectedFolder.$delete()}).then(function(){vm.service.selectedFolder=null;$state.go("app.addressbook",{addressbookId:"personal"});return true}).catch(function(response){if(response){var message=response.data.message||response.statusText;Dialog.alert(l('An error occured while deleting the addressbook "%{0}".',vm.service.selectedFolder.name),message)}})}};this.importCards=function($event,folder){$mdDialog.show({parent:angular.element(document.body),targetEvent:$event,clickOutsideToClose:true,escapeToClose:true,templateUrl:"UIxContactsImportDialog",controller:CardsImportDialogController,controllerAs:"$CardsImportDialogController",locals:{folder:folder}});CardsImportDialogController.$inject=["scope","$mdDialog","folder"];function CardsImportDialogController(scope,$mdDialog,folder){var vm=this;vm.uploader=new FileUploader({url:ApplicationBaseURL+[folder.id,"import"].join("/"),autoUpload:true,queueLimit:1,filters:[{name:filterByExtension,fn:filterByExtension}],onSuccessItem:function(item,response,status,headers){var msg;$mdDialog.hide();if(response.imported===0)msg=l("No card was imported.");else{msg=l("A total of %{0} cards were imported in the addressbook.",response.imported);AddressBook.selectedFolder.$reload()}$mdToast.show($mdToast.simple().textContent(msg).position(sgConstant.toastPosition).hideDelay(3e3))},onErrorItem:function(item,response,status,headers){$mdToast.show({template:["<md-toast>",'  <div class="md-toast-content">','    <md-icon class="md-warn md-hue-1">error_outline</md-icon>',"    <span>"+l("An error occured while importing contacts.")+"</span>","  </div>","</md-toast>"].join(""),position:Settings.toastPosition,hideDelay:3e3})}});vm.close=function(){$mdDialog.hide()};function filterByExtension(item){var isTextFile=item.type.indexOf("text")===0||/\.(ldif|vcf|vcard)$/.test(item.name);if(!isTextFile)$mdToast.show({template:["<md-toast>",'  <div class="md-toast-content">','    <md-icon class="md-warn md-hue-1">error_outline</md-icon>',"    <span>"+l("Select a vCard or LDIF file.")+"</span>","  </div>","</md-toast>"].join(""),position:Settings.toastPosition,hideDelay:3e3});return isTextFile}}};this.showLinks=function(addressbook){var promise;if(addressbook.urls)promise=$q.when();else promise=AddressBook.$reloadAll();promise.then(function(){$mdDialog.show({parent:angular.element(document.body),clickOutsideToClose:true,escapeToClose:true,templateUrl:addressbook.id+"/links",controller:LinksDialogController,controllerAs:"links",locals:{addressbook:addressbook}})});LinksDialogController.$inject=["$mdDialog","addressbook"];function LinksDialogController($mdDialog,addressbook){var vm=this;this.addressbook=addressbook;this.close=close;function close(){$mdDialog.hide()}}};this.showProperties=function(addressbook){$mdDialog.show({templateUrl:addressbook.id+"/properties",controller:PropertiesDialogController,controllerAs:"properties",clickOutsideToClose:true,escapeToClose:true,locals:{srcAddressBook:addressbook}}).catch(function(){});PropertiesDialogController.$inject=["$scope","$mdDialog","srcAddressBook"];function PropertiesDialogController($scope,$mdDialog,srcAddressBook){var vm=this;vm.addressbook=new AddressBook(srcAddressBook.$omit());vm.saveProperties=saveProperties;vm.close=close;function saveProperties(){vm.addressbook.$save().then(function(){srcAddressBook.init(vm.addressbook.$omit());$mdDialog.hide()})}function close(){$mdDialog.cancel()}}};this.share=function(addressbook){addressbook.$acl.$users().then(function(){$mdDialog.show({templateUrl:addressbook.id+"/UIxAclEditor",controller:"AclController",controllerAs:"acl",clickOutsideToClose:true,escapeToClose:true,locals:{usersWithACL:addressbook.$acl.users,User:User,folder:addressbook}})})};this.subscribeToFolder=function(addressbookData){AddressBook.$subscribe(addressbookData.owner,addressbookData.name).then(function(data){$mdToast.show($mdToast.simple().textContent(l("Successfully subscribed to address book")).position(Settings.toastPosition).hideDelay(3e3))})};this.isDroppableFolder=function(srcFolder,dstFolder){return dstFolder.id!=srcFolder.id&&(dstFolder.isOwned||dstFolder.acls.objectCreator)};this.dragSelectedCards=function(srcFolder,dstFolder,mode){var dstId,allCards,cards,ids,clearCardView,promise,success;dstId=dstFolder.id;clearCardView=false;allCards=srcFolder.$selectedCards();if(allCards.length===0)allCards=[srcFolder.$selectedCard()];cards=_.filter(allCards,function(card){return card.$isCard()});if(cards.length!=allCards.length)$mdToast.show($mdToast.simple().textContent(l("Lists can't be moved or copied.")).position(Settings.toastPosition).hideDelay(2e3));if(cards.length){if(mode=="copy"){promise=srcFolder.$copyCards(cards,dstId);success=l("%{0} card(s) copied",cards.length)}else{promise=srcFolder.$moveCards(cards,dstId);success=l("%{0} card(s) moved",cards.length);ids=_.map(cards,"id");clearCardView=srcFolder.selectedCard&&ids.indexOf(srcFolder.selectedCard)>=0}promise.then(function(){if(clearCardView)$state.go("app.addressbook");$mdToast.show($mdToast.simple().textContent(success).position(Settings.toastPosition).hideDelay(2e3))})}}}angular.module("SOGo.ContactsUI").controller("AddressBooksController",AddressBooksController)})();(function(){"use strict";CardController.$inject=["$scope","$timeout","$window","$mdDialog","sgSettings","AddressBook","Card","Dialog","sgHotkeys","sgFocus","$state","$stateParams","stateCard"];function CardController($scope,$timeout,$window,$mdDialog,sgSettings,AddressBook,Card,Dialog,sgHotkeys,focus,$state,$stateParams,stateCard){var vm=this,hotkeys=[];this.card=stateCard;this.currentFolder=AddressBook.selectedFolder;this.allEmailTypes=Card.$EMAIL_TYPES;this.allTelTypes=Card.$TEL_TYPES;this.allUrlTypes=Card.$URL_TYPES;this.allAddressTypes=Card.$ADDRESS_TYPES;this.categories={};this.userFilterResults=[];this.showRawSource=false;this.emailRE=String.emailRE;_registerHotkeys(hotkeys);_loadCertificate();$scope.$on("$destroy",function(){_.forEach(hotkeys,function(key){sgHotkeys.deregisterHotkey(key)})});function _registerHotkeys(keys){_.forEach(["backspace","delete"],function(hotkey){keys.push(sgHotkeys.createHotkey({key:hotkey,description:l("Delete"),callback:function($event){if(vm.currentFolder.acls.objectEraser&&vm.currentFolder.$selectedCount()===0)vm.confirmDelete();$event.preventDefault()}}))});_.forEach(keys,function(key){sgHotkeys.registerHotkey(key)})}function _loadCertificate(){if(vm.card.hasCertificate)vm.card.$certificate().then(function(crt){vm.certificate=crt},function(){delete vm.card.hasCertificate})}this.transformCategory=function(input){if(angular.isString(input))return{value:input};else return input};this.removeAttribute=function(form,attribute,index){this.card.$delete(attribute,index);form.$setDirty()};this.addOrg=function(){var i=this.card.$addOrg({value:""});focus("org_"+i)};this.removeCertificate=function(form){this.card.$removeCertificate();form.$setDirty()};this.addBirthday=function(){this.card.birthday=new Date};this.addScreenName=function(){this.card.$addScreenName("")};this.addEmail=function(){var i=this.card.$addEmail("");focus("email_"+i)};this.addPhone=function(){var i=this.card.$addPhone("");focus("phone_"+i)};this.addUrl=function(){var i=this.card.$addUrl("","https://www.fsf.org/");focus("url_"+i)};this.canAddCustomField=function(){return _.keys(this.card.customFields).length<4};this.addCustomField=function(){if(!angular.isDefined(this.card.customFields))this.card.customFields={};var availableKeys=_.pullAll(["1","2","3","4"],_.keys(this.card.customFields));this.card.customFields[availableKeys[0]]=""};this.deleteCustomField=function(key){delete this.card.customFields[key]};this.addAddress=function(){var i=this.card.$addAddress("","","","","","","","");focus("address_"+i)};this.userFilter=function($query,excludedCards){if($query.length<sgSettings.minimumSearchLength())return[];return AddressBook.selectedFolder.$filter($query,{dry:true,excludeLists:true},excludedCards).then(function(cards){return cards})};this.save=function(form,options){if(form.$valid){this.card.$save(options).then(function(data){var i=_.indexOf(_.map(AddressBook.selectedFolder.$cards,"id"),vm.card.id);if(i<0){AddressBook.selectedFolder.$reload()}else{AddressBook.selectedFolder.$cards[i]=angular.copy(vm.card)}$state.go("app.addressbook.card.view",{cardId:vm.card.id})},function(response){vm.duplicatedCard=new Card(response.data)})}};this.close=function(){$state.go("app.addressbook").then(function(){vm.card=null;delete AddressBook.selectedFolder.selectedCard})};this.edit=function(form){this.duplicatedCard=false;form.$setPristine();form.$setDirty()};this.reset=function(form){vm.card.$reset();form.$setPristine()};this.cancel=function(){vm.card.$reset();if(vm.card.isNew){vm.card=null;delete AddressBook.selectedFolder.selectedCard;$state.go("app.addressbook",{addressbookId:AddressBook.selectedFolder.id})}else{$state.go("app.addressbook.card.view",{cardId:vm.card.id})}};this.confirmDelete=function(){var card=stateCard;Dialog.confirm(l("Warning"),l("Are you sure you want to delete the card of %{0}?","<b>"+card.$fullname()+"</b>"),{ok:l("Delete")}).then(function(){AddressBook.selectedFolder.$deleteCards([card]).then(function(){close();$state.go("app.addressbook")},function(data,status){Dialog.alert(l("Warning"),l('An error occured while deleting the card "%{0}".',card.$fullname()))})})};this.toggleRawSource=function($event){if(!this.showRawSource&&!this.rawSource){Card.$$resource.post(this.currentFolder.id+"/"+this.card.id,"raw").then(function(data){vm.rawSource=data;vm.showRawSource=true})}else{this.showRawSource=!this.showRawSource}}}angular.module("SOGo.ContactsUI").controller("CardController",CardController)})();(function(){"use strict";function sgAddress(){return{restrict:"A",scope:{data:"=sgAddress"},controller:["$scope",function($scope){$scope.addressLines=function(data){var lines=[],locality_region=[];if(data.street)lines.push(data.street);if(data.street2)lines.push(data.street2);if(data.locality)locality_region.push(data.locality);if(data.region)locality_region.push(data.region);if(locality_region.length>0)lines.push(locality_region.join(", "));if(data.country)lines.push(data.country);if(data.postalcode)lines.push(data.postalcode);return lines.join("<br>")}}],template:'<address ng-bind-html="addressLines(data)"></address>'}}angular.module("SOGo.Common").directive("sgAddress",sgAddress)})();
-//# sourceMappingURL=Contacts.js.map
+/* -*- Mode: javascript; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* JavaScript for SOGoContacts */
+
+(function() {
+  'use strict';
+
+  angular.module('SOGo.ContactsUI', ['ngCookies', 'ui.router', 'angularFileUpload', 'sgCkeditor', 'SOGo.Common', 'SOGo.PreferencesUI', 'SOGo.MailerUI'])
+    .config(configure)
+    .run(runBlock);
+
+  /**
+   * @ngInject
+   */
+  configure.$inject = ['$stateProvider', '$urlServiceProvider'];
+  function configure($stateProvider, $urlServiceProvider) {
+    $stateProvider
+      .state('app', {
+        url: '/addressbooks',
+        abstract: true,
+        views: {
+          addressbooks: {
+            templateUrl: 'UIxContactFoldersView', // UI/Templates/Contacts/UIxContactFoldersView.wox
+            controller: 'AddressBooksController',
+            controllerAs: 'app'
+          }
+        },
+        resolve: {
+          stateAddressbooks: stateAddressbooks
+        }
+      })
+      .state('app.addressbook', {
+        url: '/:addressbookId',
+        views: {
+          addressbook: {
+            templateUrl: 'addressbook',
+            controller: 'AddressBookController',
+            controllerAs: 'addressbook'
+          }
+        },
+        resolve: {
+          stateAddressbook: stateAddressbook
+        }
+      })
+      .state('app.addressbook.new', {
+        url: '/{contactType:(?:card|list)}/new',
+        params: {
+          refs: { array: true }
+        },
+        views: {
+          card: {
+            templateUrl: 'UIxContactEditorTemplate', // UI/Templates/Contacts/UIxContactEditorTemplate.wox
+            controller: 'CardController',
+            controllerAs: 'editor'
+          }
+        },
+        resolve: {
+          stateCard: stateNewCard
+        }
+      })
+      .state('app.addressbook.card', {
+        url: '/:cardId',
+        abstract: true,
+        views: {
+          card: {
+            template: '<ui-view/>'
+          }
+        },
+        resolve: {
+          stateCard: stateCard
+        },
+        onEnter: onEnterCard,
+        onExit: onExitCard
+      })
+      .state('app.addressbook.card.view', {
+        url: '/view',
+        views: {
+          'card@app.addressbook': {
+            templateUrl: 'UIxContactViewTemplate', // UI/Templates/Contacts/UIxContactViewTemplate.wox
+            controller: 'CardController',
+            controllerAs: 'editor'
+          }
+        }
+      })
+      .state('app.addressbook.card.editor', {
+        url: '/edit',
+        views: {
+          'card@app.addressbook': {
+            templateUrl: 'UIxContactEditorTemplate', // UI/Templates/Contacts/UIxContactEditorTemplate.wox
+            controller: 'CardController',
+            controllerAs: 'editor'
+          }
+        }
+      });
+
+    // if none of the above states are matched, use this as the fallback
+    $urlServiceProvider.rules.otherwise({ state: 'app.addressbook', params: { addressbookId: 'personal' } });
+  }
+
+  /**
+   * @ngInject
+   */
+  stateAddressbooks.$inject = ['AddressBook'];
+  function stateAddressbooks(AddressBook) {
+    return AddressBook.$findAll(window.contactFolders);
+  }
+
+  /**
+   * @ngInject
+   */
+  stateAddressbook.$inject = ['$q', '$state', '$stateParams', 'AddressBook'];
+  function stateAddressbook($q, $state, $stateParams, AddressBook) {
+    var addressbook = _.find(AddressBook.$findAll(), function(addressbook) {
+      return addressbook.id == $stateParams.addressbookId;
+    });
+    if (addressbook) {
+      delete addressbook.selectedCard;
+      addressbook.$reload();
+      return addressbook;
+    }
+    return $q.reject('Addressbook ' + $stateParams.addressbookId + ' not found');
+  }
+
+  /**
+   * @ngInject
+   */
+  stateNewCard.$inject = ['$stateParams', 'stateAddressbook', 'Card'];
+  function stateNewCard($stateParams, stateAddressbook, Card) {
+    var tag = 'v' + $stateParams.contactType,
+        card = new Card({ pid: $stateParams.addressbookId, c_component: tag, refs: $stateParams.refs });
+    stateAddressbook.selectedCard = true;
+    return card;
+  }
+
+  /**
+   * @ngInject
+   */
+  stateCard.$inject = ['$state', '$stateParams', 'stateAddressbook'];
+  function stateCard($state, $stateParams, stateAddressbook) {
+    return stateAddressbook.$futureAddressBookData.then(function() {
+      var card = _.find(stateAddressbook.$cards, function(cardObject) {
+        return (cardObject.id == $stateParams.cardId);
+      });
+
+      if (card) {
+        return card.$reload();
+      }
+      else {
+        // Card not found
+        $state.go('app.addressbook');
+      }
+    });
+  }
+
+  /**
+   * @ngInject
+   */
+  onEnterCard.$inject = ['$stateParams', 'stateAddressbook'];
+  function onEnterCard($stateParams, stateAddressbook) {
+    stateAddressbook.selectedCard = $stateParams.cardId;
+  }
+
+  /**
+   * @ngInject
+   */
+  onExitCard.$inject = ['stateAddressbook'];
+  function onExitCard(stateMailbox) {
+    delete stateAddressbook.selectedCard;
+  }
+
+  /**
+   * @ngInject
+   */
+  runBlock.$inject = ['$window', '$log', '$transitions', '$state'];
+  function runBlock($window, $log, $transitions, $state) {
+    if (!$window.DebugEnabled)
+      $state.defaultErrorHandler(function() {
+        // Don't report any state error
+      });
+    $transitions.onError({ to: 'app.**' }, function(transition) {
+      if (transition.to().name != 'app' &&
+          !transition.ignored()) {
+        $log.error('transition error to ' + transition.to().name + ': ' + transition.error().detail);
+        $state.go('app.addressbook', { addressbookId: 'personal' });
+      }
+    });
+  }
+
+})();
+/* -*- Mode: javascript; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+
+(function() {
+  'use strict';
+
+  /**
+   * @ngInject
+   */
+  AddressBookController.$inject = ['$scope', '$q', '$window', '$state', '$timeout', '$mdDialog', '$mdToast', 'Account', 'Card', 'AddressBook', 'sgFocus', 'Dialog', 'sgConstant', 'sgHotkeys', 'stateAddressbooks', 'stateAddressbook'];
+  function AddressBookController($scope, $q, $window, $state, $timeout, $mdDialog, $mdToast, Account, Card, AddressBook, focus, Dialog, sgConstant, sgHotkeys, stateAddressbooks, stateAddressbook) {
+    var vm = this, hotkeys = [], sortLabels,
+        defaultWindowTitle = angular.element($window.document).find('title').attr('sg-default') || "SOGo";
+
+    sortLabels = {
+      c_cn: 'Name',
+      c_sn: 'Lastname',
+      c_givenname: 'Firstname',
+      c_mail: 'Email',
+      c_screenname: 'Screen Name',
+      c_o: 'Organization',
+      c_telephonenumber: 'Preferred Phone'
+    };
+
+    this.$onInit = function() {
+      AddressBook.selectedFolder = stateAddressbook;
+
+      this.service = AddressBook;
+      this.selectedFolder = stateAddressbook;
+      this.mode = { search: false, multiple: 0 };
+      this.allSelected = false;
+
+
+      _registerHotkeys(hotkeys);
+
+      $scope.$on('$destroy', function() {
+        // Deregister hotkeys
+        _.forEach(hotkeys, function(key) {
+          sgHotkeys.deregisterHotkey(key);
+        });
+      });
+
+      // Update window's title with name of selected addressbook
+      $scope.$watch(function() { return vm.selectedFolder.name; }, function(selectedAddressbookName) {
+        var title = selectedAddressbookName;
+        title += ' | ' + defaultWindowTitle;
+        $window.document.title = title;
+      });
+    };
+
+    function _registerHotkeys(keys) {
+      keys.push(sgHotkeys.createHotkey({
+        key: l('hotkey_search'),
+        description: l('Search'),
+        callback: angular.bind(vm, vm.searchMode)
+      }));
+      keys.push(sgHotkeys.createHotkey({
+        key: l('key_create_card'),
+        description: l('Create a new address book card'),
+        callback: angular.bind(vm, vm.newComponent, 'card')
+      }));
+      keys.push(sgHotkeys.createHotkey({
+        key: l('key_create_list'),
+        description: l('Create a new list'),
+        callback: angular.bind(vm, vm.newComponent, 'list')
+      }));
+      keys.push(sgHotkeys.createHotkey({
+        key: 'space',
+        description: l('Toggle item'),
+        callback: angular.bind(vm, vm.toggleCardSelection)
+      }));
+      keys.push(sgHotkeys.createHotkey({
+        key: 'shift+space',
+        description: l('Toggle range of items'),
+        callback: angular.bind(vm, vm.toggleCardSelection)
+      }));
+      keys.push(sgHotkeys.createHotkey({
+        key: 'up',
+        description: l('View next item'),
+        callback: _nextCard
+      }));
+      keys.push(sgHotkeys.createHotkey({
+        key: 'down',
+        description: l('View previous item'),
+        callback: _previousCard
+      }));
+      keys.push(sgHotkeys.createHotkey({
+        key: 'shift+up',
+        description: l('Add next item to selection'),
+        callback: _addNextCardToSelection
+      }));
+      keys.push(sgHotkeys.createHotkey({
+        key: 'shift+down',
+        description: l('Add previous item to selection'),
+        callback: _addPreviousCardToSelection
+      }));
+      _.forEach(['backspace', 'delete'], function(hotkey) {
+        keys.push(sgHotkeys.createHotkey({
+          key: hotkey,
+          description: l('Delete selected card or address book'),
+          callback: angular.bind(vm, vm.confirmDeleteSelectedCards)
+        }));
+      });
+
+      // Register the hotkeys
+      _.forEach(keys, function(key) {
+        sgHotkeys.registerHotkey(key);
+      });
+    }
+
+    this.centerIsClose = function(navController_centerIsClose) {
+      // Allow the cards list to be hidden only if a card is selected
+      return this.selectedFolder.hasSelectedCard() && !!navController_centerIsClose;
+    };
+
+    this.selectCard = function(card) {
+      $state.go('app.addressbook.card.view', {cardId: card.id});
+    };
+
+    this.toggleCardSelection = function($event, card) {
+      var folder = this.selectedFolder,
+          selectedIndex, nextSelectedIndex, i;
+
+      if (!card)
+        card = folder.$selectedCard();
+      card.selected = !card.selected;
+      this.mode.multiple += card.selected? 1 : -1;
+
+      // Select closest range of cards when shift key is pressed
+      if ($event.shiftKey && folder.$selectedCount() > 1) {
+        selectedIndex = folder.idsMap[card.id];
+        // Search for next selected card above
+        nextSelectedIndex = selectedIndex - 2;
+        while (nextSelectedIndex >= 0 &&
+               !folder.$cards[nextSelectedIndex].selected)
+          nextSelectedIndex--;
+        if (nextSelectedIndex < 0) {
+          // Search for next selected card bellow
+          nextSelectedIndex = selectedIndex + 2;
+          while (nextSelectedIndex < folder.getLength() &&
+                 !folder.$cards[nextSelectedIndex].selected)
+            nextSelectedIndex++;
+        }
+        if (nextSelectedIndex >= 0 && nextSelectedIndex < folder.getLength()) {
+          for (i = Math.min(selectedIndex, nextSelectedIndex);
+               i <= Math.max(selectedIndex, nextSelectedIndex);
+               i++)
+            folder.$cards[i].selected = true;
+        }
+      }
+
+      $event.preventDefault();
+      $event.stopPropagation();
+    };
+
+    this.newComponent = function(type) {
+      $state.go('app.addressbook.new', { contactType: type });
+    };
+
+    this.unselectCards = function() {
+      _.forEach(this.selectedFolder.$cards, function(card) {
+        card.selected = false;
+      });
+      this.mode.multiple = 0;
+    };
+
+    /**
+     * User has pressed up arrow key
+     */
+    function _nextCard($event) {
+      var index = vm.selectedFolder.$selectedCardIndex();
+
+      if (angular.isDefined(index)) {
+        index--;
+        if (vm.selectedFolder.$topIndex > 0)
+          vm.selectedFolder.$topIndex--;
+      }
+      else {
+        // No card is selected, show oldest card
+        index = vm.selectedFolder.$cards.length() - 1;
+        vm.selectedFolder.$topIndex = vm.selectedFolder.getLength();
+      }
+
+      if (index > -1)
+        vm.selectCard(vm.selectedFolder.$cards[index]);
+
+      $event.preventDefault();
+
+      return index;
+    }
+
+    /**
+     * User has pressed the down arrow key
+     */
+    function _previousCard($event) {
+      var index = vm.selectedFolder.$selectedCardIndex();
+
+      if (angular.isDefined(index)) {
+        index++;
+        if (vm.selectedFolder.$topIndex < vm.selectedFolder.$cards.length)
+          vm.selectedFolder.$topIndex++;
+      }
+      else
+        // No card is selected, show newest
+        index = 0;
+
+      if (index < vm.selectedFolder.$cards.length)
+        vm.selectCard(vm.selectedFolder.$cards[index]);
+      else
+        index = -1;
+
+      $event.preventDefault();
+
+      return index;
+    }
+
+    function _addNextCardToSelection($event) {
+      var index;
+
+      if (vm.selectedFolder.hasSelectedCard()) {
+        index = _nextCard($event);
+        if (index >= 0)
+          toggleCardSelection($event, vm.selectedFolder.$cards[index]);
+      }
+    }
+
+    function _addPreviousCardToSelection($event) {
+      var index;
+
+      if (vm.selectedFolder.hasSelectedCard()) {
+        index = _previousCard($event);
+        if (index >= 0)
+          toggleCardSelection($event, vm.selectedFolder.$cards[index]);
+      }
+    }
+
+    this.confirmDeleteSelectedCards = function($event) {
+      var selectedCards = this.selectedFolder.$selectedCards();
+
+      if (this.selectedFolder.acls.objectEraser && _.size(selectedCards) > 0)
+        Dialog.confirm(l('Warning'),
+                       l('Are you sure you want to delete the selected contacts?'),
+                       { ok: l('Delete') })
+        .then(function() {
+          // User confirmed the deletion
+          vm.selectedFolder.$deleteCards(selectedCards).then(function() {
+            vm.mode.multiple = 0;
+            if (!vm.selectedFolder.selectedCard)
+              $state.go('app.addressbook');
+          });
+        });
+
+      $event.preventDefault();
+    };
+
+    /**
+     * @see AddressBooksController.dragSelectedCards
+     */
+    function _selectedCardsOperation(operation, dstId) {
+      var srcFolder, allCards, cards, ids, clearCardView, promise, success;
+
+      srcFolder = vm.selectedFolder;
+      clearCardView = false;
+      allCards = srcFolder.$selectedCards();
+      cards = _.filter(allCards, function(card) {
+        return card.$isCard();
+      });
+
+      if (cards.length != allCards.length)
+        $mdToast.show(
+          $mdToast.simple()
+            .textContent(l("Lists can't be moved or copied."))
+            .position(sgConstant.toastPosition)
+            .hideDelay(2000));
+
+      if (cards.length) {
+        if (operation == 'copy') {
+          promise = srcFolder.$copyCards(cards, dstId);
+          success = l('%{0} card(s) copied', cards.length);
+        }
+        else {
+          promise = srcFolder.$moveCards(cards, dstId);
+          success = l('%{0} card(s) moved', cards.length);
+          // Check if currently displayed card will be moved
+          ids = _.map(cards, 'id');
+          clearCardView = (srcFolder.selectedCard && ids.indexOf(srcFolder.selectedCard) >= 0);
+        }
+
+        // Show success toast when action succeeds
+        promise.then(function() {
+          if (clearCardView)
+            $state.go('app.addressbook');
+          $mdToast.show(
+            $mdToast.simple()
+              .textContent(success)
+              .position(sgConstant.toastPosition)
+              .hideDelay(2000));
+        });
+      }
+    }
+
+    this.copySelectedCards = function(folder) {
+      _selectedCardsOperation('copy', folder);
+    };
+
+    this.moveSelectedCards = function(folder) {
+      _selectedCardsOperation('move', folder);
+    };
+
+    this.selectAll = function() {
+      _.forEach(this.selectedFolder.$cards, function(card) {
+        card.selected = !vm.allSelected;
+      });
+      vm.allSelected = !vm.allSelected;
+      this.mode.multiple = this.selectedFolder.$cards.length;
+    };
+
+    this.sort = function(field) {
+      if (field) {
+        this.selectedFolder.$filter('', { sort: field });
+      }
+      else {
+        return sortLabels[AddressBook.$query.sort];
+      }
+    };
+
+    this.sortedBy = function(field) {
+      return AddressBook.$query.sort == field;
+    };
+
+    this.ascending = function() {
+      return AddressBook.$query.asc;
+    };
+
+    this.searchMode = function($event) {
+      vm.mode.search = true;
+      focus('search');
+      if ($event)
+        $event.preventDefault();
+    };
+
+    this.cancelSearch = function() {
+      this.mode.search = false;
+      this.selectedFolder.$filter('');
+    };
+
+    this.newMessage = function($event, recipients, recipientsField) {
+      Account.$findAll().then(function(accounts) {
+        var account = _.find(accounts, function(o) {
+          if (o.id === 0)
+            return o;
+        }),
+            onCompleteDeferred = $q.defer();
+
+        // We must initialize the Account with its mailbox
+        // list before proceeding with message's creation
+        account.$getMailboxes().then(function(mailboxes) {
+          account.$newMessage().then(function(message) {
+            message.editable[recipientsField] = recipients;
+            $mdDialog.show({
+              parent: angular.element(document.body),
+              targetEvent: $event,
+              clickOutsideToClose: false,
+              escapeToClose: false,
+              templateUrl: '../Mail/UIxMailEditor',
+              controller: 'MessageEditorController',
+              controllerAs: 'editor',
+              onComplete: function (scope, element) {
+                return onCompleteDeferred.resolve(element);
+              },
+              locals: {
+                stateParent: $scope,
+                stateAccount: account,
+                stateMessage: message,
+                onCompletePromise: function () {
+                  return onCompleteDeferred.promise;
+                }
+              }
+            });
+          });
+        });
+      });
+    };
+
+    this.newMessageWithRecipient = function($event, recipient, fn) {
+      var recipients = [fn + ' <' + recipient + '>'];
+      this.newMessage($event, recipients, 'to');
+      $event.stopPropagation();
+      $event.preventDefault();
+    };
+
+    this.newMessageWithSelectedCards = function($event, recipientsField) {
+      var selectedFolder = this.selectedFolder;
+      var selectedCards = _.filter(this.selectedFolder.$cards, function(card) { return card.selected; });
+      var promises = [], recipients = [];
+
+      _.forEach(selectedCards, function(card) {
+        if (card.$isList({expandable: true})) {
+          // If the list's members were already fetch, use them
+          if (angular.isDefined(card.refs) && card.refs.length) {
+            _.forEach(card.refs, function(ref) {
+              if (ref.email.length)
+                recipients.push(ref.$shortFormat());
+            });
+          }
+          else {
+            promises.push(card.$reload().then(function(card) {
+              _.forEach(card.refs, function(ref) {
+                if (ref.email.length)
+                  recipients.push(ref.$shortFormat());
+              });
+            }));
+          }
+        }
+        else if (card.$loaded == Card.STATUS.LOADED) {
+          if (card.c_mail) {
+            recipients.push(card.$shortFormat());
+          }
+        }
+        else {
+          selectedFolder.$loadCard(card);
+          promises.push(selectedFolder.$futureHeadersData.then(function() {
+            var i = selectedFolder.idsMap[card.id];
+            if (angular.isDefined(i)) {
+              var loadedCard = selectedFolder.$cards[i];
+              if (loadedCard.c_mail)
+                recipients.push(loadedCard.$shortFormat());
+            }
+          }));
+        }
+      });
+
+      $q.all(promises).then(function() {
+        recipients = _.uniq(recipients);
+        if (recipients.length)
+          vm.newMessage($event, recipients, recipientsField);
+      });
+    };
+
+    this.newListWithSelectedCards = function() {
+      var _this = this;
+      var selectedCards = _.filter(this.selectedFolder.$cards, function(card) { return card.selected; });
+      var promises = [], ids = [], refs = [];
+
+      _.forEach(selectedCards, function(card) {
+        if (card.$isList({expandable: true})) {
+          // If the list's members were already fetch, use them
+          if (angular.isDefined(card.refs) && card.refs.length) {
+            _.forEach(card.refs, function(ref) {
+              if (ref.email.length)
+                refs.push(ref);
+            });
+          }
+          else {
+            promises.push(card.$reload().then(function(card) {
+              _.forEach(card.refs, function(ref) {
+                if (ref.email.length)
+                  refs.push(ref);
+              });
+            }));
+          }
+        }
+        else if (card.$$email && card.$$email.length) {
+          refs.push(card);
+        }
+        else if (!card.$loaded) {
+          refs.push(card);
+          ids.push(card.id);
+        }
+      });
+
+      if (ids.length) {
+        var futureHeadersData = AddressBook.$$resource.post(this.selectedFolder.id, 'headers', {ids: ids});
+        promises.push(_this.selectedFolder.$unwrapHeaders(futureHeadersData));
+      }
+
+      $q.all(promises).then(function() {
+        refs = _.uniqBy(_.map(refs, function(o) {
+          return { reference: o.id || o.reference, email: o.$$email || o.email };
+        }), 'reference');
+        if (refs.length)
+          $state.go('app.addressbook.new', { contactType: 'list', refs: refs });
+      });
+    };
+
+  }
+
+  angular
+    .module('SOGo.ContactsUI')
+    .controller('AddressBookController', AddressBookController);
+})();
+/* -*- Mode: javascript; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+
+(function() {
+  'use strict';
+
+  /**
+   * @ngInject
+   */
+  AddressBooksController.$inject = ['$q', '$state', '$scope', '$rootScope', '$stateParams', '$timeout', '$window', '$mdDialog', '$mdToast', '$mdMedia', '$mdSidenav', 'FileUploader', 'sgConstant', 'sgHotkeys', 'sgFocus', 'Card', 'AddressBook', 'Dialog', 'sgSettings', 'User', 'stateAddressbooks'];
+  function AddressBooksController($q, $state, $scope, $rootScope, $stateParams, $timeout, $window, $mdDialog, $mdToast, $mdMedia, $mdSidenav, FileUploader, sgConstant, sgHotkeys, focus, Card, AddressBook, Dialog, Settings, User, stateAddressbooks) {
+    var vm = this, hotkeys = [];
+
+    this.$onInit = function () {
+      this.activeUser = Settings.activeUser;
+      this.service = AddressBook;
+      this.saving = false;
+
+      _registerHotkeys(hotkeys);
+    };
+
+    this.$onDestroy = function () {
+      // Deregister hotkeys
+      _.forEach(hotkeys, function(key) {
+        sgHotkeys.deregisterHotkey(key);
+      });
+    };
+
+    function _registerHotkeys(keys) {
+      _.forEach(['backspace', 'delete'], function(hotkey) {
+        keys.push(sgHotkeys.createHotkey({
+          key: hotkey,
+          description: l('Delete selected card or address book'),
+          callback: function() {
+            if (AddressBook.selectedFolder && !AddressBook.selectedFolder.hasSelectedCard())
+              confirmDelete();
+          }
+        }));
+      });
+
+      // Register the hotkeys
+      _.forEach(keys, function(key) {
+        sgHotkeys.registerHotkey(key);
+      });
+    }
+
+    this.select = function ($event, folder) {
+      if ($state.params.addressbookId != folder.id &&
+          this.editMode != folder.id) {
+        this.editMode = false;
+        AddressBook.$query.value = '';
+        // Close sidenav on small devices
+        if (!$mdMedia(sgConstant['gt-md']))
+          $mdSidenav('left').close();
+        $state.go('app.addressbook', {addressbookId: folder.id});
+      }
+    };
+
+    this.newAddressbook = function () {
+      Dialog.prompt(l('New Addressbook...'),
+                    l('Name of the Address Book'))
+        .then(function(name) {
+          var addressbook = new AddressBook(
+            {
+              name: name,
+              isEditable: true,
+              isRemote: false,
+              owner: UserLogin
+            }
+          );
+          addressbook.$id().then(function() {
+            AddressBook.$add(addressbook);
+          }).catch(_.noop); // error
+        });
+    };
+
+    this.edit = function (folder) {
+      if (!folder.isRemote) {
+        this.editMode = folder.id;
+        this.originalAddressbook = folder.$omit();
+        focus('addressBookName_' + folder.id);
+      }
+    };
+
+    this.revertEditing = function (folder) {
+      folder.name = this.originalAddressbook.name;
+      this.editMode = false;
+    };
+
+    this.save = function (folder) {
+      var name = folder.name;
+      if (!this.saving && name && name.length > 0) {
+        if (name != this.originalAddressbook.name) {
+          this.saving = true;
+          folder.$rename(name)
+            .then(function(data) {
+              vm.editMode = false;
+            }, function() {
+              vm.revertEditing(folder);
+              vm.editMode = folder.id;
+            })
+            .finally(function() {
+              vm.saving = false;
+            });
+        }
+        else {
+          this.editMode = false;
+        }
+      }
+      else {
+        this.revertEditing(folder);
+      }
+    };
+
+    this.confirmDelete = function () {
+      if (this.service.selectedFolder.isSubscription) {
+        // Unsubscribe without confirmation
+        this.service.selectedFolder.$delete()
+          .then(function() {
+            vm.service.selectedFolder = null;
+            $state.go('app.addressbook', { addressbookId: 'personal' });
+          }, function(data, status) {
+            Dialog.alert(l('An error occured while deleting the addressbook "%{0}".',
+                           vm.service.selectedFolder.name),
+                         l(data.error));
+          });
+      }
+      else {
+        Dialog.confirm(l('Warning'), l('Are you sure you want to delete the addressbook "%{0}"?',
+                                       this.service.selectedFolder.name),
+                       { ok: l('Delete') })
+          .then(function() {
+            return vm.service.selectedFolder.$delete();
+          })
+          .then(function() {
+            vm.service.selectedFolder = null;
+            $state.go('app.addressbook', { addressbookId: 'personal' });
+            return true;
+          })
+          .catch(function(response) {
+            if (response) {
+              var message = response.data.message || response.statusText;
+              Dialog.alert(l('An error occured while deleting the addressbook "%{0}".',
+                             vm.service.selectedFolder.name),
+                           message);
+            }
+          });
+      }
+    };
+
+    this.importCards = function ($event, folder) {
+      $mdDialog.show({
+        parent: angular.element(document.body),
+        targetEvent: $event,
+        clickOutsideToClose: true,
+        escapeToClose: true,
+        templateUrl: 'UIxContactsImportDialog',
+        controller: CardsImportDialogController,
+        controllerAs: '$CardsImportDialogController',
+        locals: {
+          folder: folder
+        }
+      });
+
+      /**
+       * @ngInject
+       */
+      CardsImportDialogController.$inject = ['scope', '$mdDialog', 'folder'];
+      function CardsImportDialogController(scope, $mdDialog, folder) {
+        var vm = this;
+
+        vm.uploader = new FileUploader({
+          url: ApplicationBaseURL + [folder.id, 'import'].join('/'),
+          autoUpload: true,
+          queueLimit: 1,
+          filters: [{ name: filterByExtension, fn: filterByExtension }],
+          onSuccessItem: function(item, response, status, headers) {
+            var msg;
+
+            $mdDialog.hide();
+
+            if (response.imported === 0)
+              msg = l('No card was imported.');
+            else {
+              msg = l('A total of %{0} cards were imported in the addressbook.', response.imported);
+              AddressBook.selectedFolder.$reload();
+            }
+
+            $mdToast.show(
+              $mdToast.simple()
+                .textContent(msg)
+                .position(sgConstant.toastPosition)
+                .hideDelay(3000));
+          },
+          onErrorItem: function(item, response, status, headers) {
+            $mdToast.show({
+              template: [
+                '<md-toast>',
+                '  <div class="md-toast-content">',
+                '    <md-icon class="md-warn md-hue-1">error_outline</md-icon>',
+                '    <span>' + l('An error occured while importing contacts.') + '</span>',
+                '  </div>',
+                '</md-toast>'
+              ].join(''),
+              position: Settings.toastPosition,
+              hideDelay: 3000
+            });
+          }
+        });
+
+        vm.close = function() {
+          $mdDialog.hide();
+        };
+
+        function filterByExtension(item) {
+          var isTextFile = item.type.indexOf('text') === 0 ||
+              /\.(ldif|vcf|vcard)$/.test(item.name);
+
+          if (!isTextFile)
+            $mdToast.show({
+              template: [
+                '<md-toast>',
+                '  <div class="md-toast-content">',
+                '    <md-icon class="md-warn md-hue-1">error_outline</md-icon>',
+                '    <span>' + l('Select a vCard or LDIF file.') + '</span>',
+                '  </div>',
+                '</md-toast>'
+              ].join(''),
+              position: Settings.toastPosition,
+              hideDelay: 3000
+            });
+
+          return isTextFile;
+        }
+      }
+    };
+
+    this.showLinks = function (addressbook) {
+      var promise;
+      if (addressbook.urls)
+        promise = $q.when();
+      else
+        // Refresh list of addressbooks to fetch links associated to addressbook
+        promise = AddressBook.$reloadAll();
+      promise.then(function() {
+        $mdDialog.show({
+          parent: angular.element(document.body),
+          clickOutsideToClose: true,
+          escapeToClose: true,
+          templateUrl: addressbook.id + '/links',
+          controller: LinksDialogController,
+          controllerAs: 'links',
+          locals: {
+            addressbook: addressbook
+          }
+        });
+      });
+
+      /**
+       * @ngInject
+       */
+      LinksDialogController.$inject = ['$mdDialog', 'addressbook'];
+      function LinksDialogController($mdDialog, addressbook) {
+        var vm = this;
+        this.addressbook = addressbook;
+        this.close = close;
+
+        function close() {
+          $mdDialog.hide();
+        }
+      }
+    };
+
+    this.showProperties = function (addressbook) {
+      $mdDialog.show({
+        templateUrl: addressbook.id + '/properties',
+        controller: PropertiesDialogController,
+        controllerAs: 'properties',
+        clickOutsideToClose: true,
+        escapeToClose: true,
+        locals: {
+          srcAddressBook: addressbook
+        }
+      }).catch(function() {
+        // Do nothing
+      });
+
+      /**
+       * @ngInject
+       */
+      PropertiesDialogController.$inject = ['$scope', '$mdDialog', 'srcAddressBook'];
+      function PropertiesDialogController($scope, $mdDialog, srcAddressBook) {
+        var vm = this;
+
+        vm.addressbook = new AddressBook(srcAddressBook.$omit());
+        vm.saveProperties = saveProperties;
+        vm.close = close;
+
+        function saveProperties() {
+          vm.addressbook.$save().then(function() {
+            // Refresh list instance
+            srcAddressBook.init(vm.addressbook.$omit());
+            $mdDialog.hide();
+          });
+        }
+
+        function close() {
+          $mdDialog.cancel();
+        }
+      }
+    };
+
+    this.share = function (addressbook) {
+      // Fetch list of ACL users
+      addressbook.$acl.$users().then(function() {
+        // Show ACL editor
+        $mdDialog.show({
+          templateUrl: addressbook.id + '/UIxAclEditor', // UI/Templates/UIxAclEditor.wox
+          controller: 'AclController', // from the ng module SOGo.Common
+          controllerAs: 'acl',
+          clickOutsideToClose: true,
+          escapeToClose: true,
+          locals: {
+            usersWithACL: addressbook.$acl.users,
+            User: User,
+            folder: addressbook
+          }
+        });
+      });
+    };
+
+    /**
+     * subscribeToFolder - Callback of sgSubscribe directive
+     */
+    this.subscribeToFolder = function (addressbookData) {
+      AddressBook.$subscribe(addressbookData.owner, addressbookData.name).then(function(data) {
+         $mdToast.show(
+           $mdToast.simple()
+             .textContent(l('Successfully subscribed to address book'))
+             .position(Settings.toastPosition)
+             .hideDelay(3000));
+      });
+    };
+
+    this.isDroppableFolder = function (srcFolder, dstFolder) {
+      return (dstFolder.id != srcFolder.id) && (dstFolder.isOwned || dstFolder.acls.objectCreator);
+    };
+
+    /**
+     * @see AddressBookController._selectedCardsOperation
+     */
+    this.dragSelectedCards = function (srcFolder, dstFolder, mode) {
+      var dstId, allCards, cards, ids, clearCardView, promise, success;
+
+      dstId = dstFolder.id;
+      clearCardView = false;
+      allCards = srcFolder.$selectedCards();
+      if (allCards.length === 0)
+        allCards = [srcFolder.$selectedCard()];
+      cards = _.filter(allCards, function(card) {
+        return card.$isCard();
+      });
+
+      if (cards.length != allCards.length)
+        $mdToast.show(
+          $mdToast.simple()
+            .textContent(l("Lists can't be moved or copied."))
+            .position(Settings.toastPosition)
+            .hideDelay(2000));
+
+      if (cards.length) {
+        if (mode == 'copy') {
+          promise = srcFolder.$copyCards(cards, dstId);
+          success = l('%{0} card(s) copied', cards.length);
+        }
+        else {
+          promise = srcFolder.$moveCards(cards, dstId);
+          success = l('%{0} card(s) moved', cards.length);
+          // Check if currently displayed card will be moved
+          ids = _.map(cards, 'id');
+          clearCardView = (srcFolder.selectedCard && ids.indexOf(srcFolder.selectedCard) >= 0);
+        }
+
+        // Show success toast when action succeeds
+        promise.then(function() {
+          if (clearCardView)
+            $state.go('app.addressbook');
+          $mdToast.show(
+            $mdToast.simple()
+              .textContent(success)
+              .position(Settings.toastPosition)
+              .hideDelay(2000));
+        });
+      }
+    };
+
+  }
+
+  angular
+    .module('SOGo.ContactsUI')
+    .controller('AddressBooksController', AddressBooksController);
+})();
+/* -*- Mode: javascript; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+
+(function() {
+  'use strict';
+
+  /**
+   * Controller to view and edit a card
+   * @ngInject
+   */
+  CardController.$inject = ['$scope', '$timeout', '$window', '$mdDialog', 'sgSettings', 'AddressBook', 'Card', 'Dialog', 'sgHotkeys', 'sgFocus', '$state', '$stateParams', 'stateCard'];
+  function CardController($scope, $timeout, $window, $mdDialog, sgSettings, AddressBook, Card, Dialog, sgHotkeys, focus, $state, $stateParams, stateCard) {
+    var vm = this, hotkeys = [];
+
+    this.card = stateCard;
+
+    this.currentFolder = AddressBook.selectedFolder;
+    this.allEmailTypes = Card.$EMAIL_TYPES;
+    this.allTelTypes = Card.$TEL_TYPES;
+    this.allUrlTypes = Card.$URL_TYPES;
+    this.allAddressTypes = Card.$ADDRESS_TYPES;
+    this.categories = {};
+    this.userFilterResults = [];
+    this.showRawSource = false;
+    this.emailRE = String.emailRE;
+
+
+    _registerHotkeys(hotkeys);
+    _loadCertificate();
+
+    $scope.$on('$destroy', function() {
+      // Deregister hotkeys
+      _.forEach(hotkeys, function(key) {
+        sgHotkeys.deregisterHotkey(key);
+      });
+    });
+
+
+    function _registerHotkeys(keys) {
+      _.forEach(['backspace', 'delete'], function(hotkey) {
+        keys.push(sgHotkeys.createHotkey({
+          key: hotkey,
+          description: l('Delete'),
+          callback: function($event) {
+            if (vm.currentFolder.acls.objectEraser && vm.currentFolder.$selectedCount() === 0)
+              vm.confirmDelete();
+            $event.preventDefault();
+          }
+        }));
+      });
+
+      // Register the hotkeys
+      _.forEach(keys, function(key) {
+        sgHotkeys.registerHotkey(key);
+      });
+    }
+
+    function _loadCertificate() {
+      if (vm.card.hasCertificate)
+        vm.card.$certificate().then(function(crt) {
+          vm.certificate = crt;
+        }, function() {
+          delete vm.card.hasCertificate;
+        });
+    }
+
+    this.transformCategory = function (input) {
+      if (angular.isString(input))
+        return { value: input };
+      else
+        return input;
+    };
+
+    this.removeAttribute = function (form, attribute, index) {
+      this.card.$delete(attribute, index);
+      form.$setDirty();
+    };
+
+    this.addOrg = function () {
+      var i = this.card.$addOrg({ value: '' });
+      focus('org_' + i);
+    };
+
+    this.removeCertificate = function (form) {
+      this.card.$removeCertificate();
+      form.$setDirty();
+    };
+
+    this.addBirthday = function () {
+      this.card.birthday = new Date();
+    };
+
+    this.addScreenName = function () {
+      this.card.$addScreenName('');
+    };
+
+    this.addEmail = function () {
+      var i = this.card.$addEmail('');
+      focus('email_' + i);
+    };
+
+    this.addPhone = function () {
+      var i = this.card.$addPhone('');
+      focus('phone_' + i);
+    };
+
+    this.addUrl = function () {
+      var i = this.card.$addUrl('', 'https://www.fsf.org/');
+      focus('url_' + i);
+    };
+
+    this.canAddCustomField = function () {
+      return _.keys(this.card.customFields).length < 4;
+    };
+
+    this.addCustomField = function () {
+      if (!angular.isDefined(this.card.customFields))
+        this.card.customFields = {};
+
+      // Find the first 'available' custom field
+      var availableKeys = _.pullAll(['1', '2', '3', '4'], _.keys(this.card.customFields));
+      this.card.customFields[availableKeys[0]] = "";
+    };
+
+    this.deleteCustomField = function (key) {
+      delete this.card.customFields[key];
+    };
+
+    this.addAddress = function () {
+      var i = this.card.$addAddress('', '', '', '', '', '', '', '');
+      focus('address_' + i);
+    };
+
+    this.userFilter = function ($query, excludedCards) {
+      if ($query.length < sgSettings.minimumSearchLength())
+        return [];
+
+      return AddressBook.selectedFolder.$filter($query, {dry: true, excludeLists: true}, excludedCards).then(function(cards) {
+        return cards;
+      });
+    };
+
+    this.save = function (form, options) {
+      if (form.$valid) {
+        this.card.$save(options)
+          .then(function(data) {
+            var i = _.indexOf(_.map(AddressBook.selectedFolder.$cards, 'id'), vm.card.id);
+            if (i < 0) {
+              // New card; reload contacts list and show addressbook in which the card has been created
+              AddressBook.selectedFolder.$reload();
+            }
+            else {
+              // Update contacts list with new version of the Card object
+              AddressBook.selectedFolder.$cards[i] = angular.copy(vm.card);
+            }
+            $state.go('app.addressbook.card.view', { cardId: vm.card.id });
+          }, function(response) {
+            vm.duplicatedCard = new Card(response.data);
+          });
+      }
+    };
+
+    this.close = function () {
+      $state.go('app.addressbook').then(function() {
+        vm.card = null;
+        delete AddressBook.selectedFolder.selectedCard;
+      });
+    };
+
+    this.edit = function (form) {
+      this.duplicatedCard = false;
+      form.$setPristine();
+      form.$setDirty();
+    };
+
+    this.reset = function (form) {
+      vm.card.$reset();
+      form.$setPristine();
+    };
+
+    this.cancel = function () {
+      vm.card.$reset();
+      if (vm.card.isNew) {
+        // Cancelling the creation of a card
+        vm.card = null;
+        delete AddressBook.selectedFolder.selectedCard;
+        $state.go('app.addressbook', { addressbookId: AddressBook.selectedFolder.id });
+      }
+      else {
+        // Cancelling the edition of an existing card
+        $state.go('app.addressbook.card.view', { cardId: vm.card.id });
+      }
+    };
+
+    this.confirmDelete = function () {
+      var card = stateCard;
+
+      Dialog.confirm(l('Warning'),
+                     l('Are you sure you want to delete the card of %{0}?', '<b>' + card.$fullname() + '</b>'),
+                     { ok: l('Delete') })
+        .then(function() {
+          // User confirmed the deletion
+          AddressBook.selectedFolder.$deleteCards([card])
+            .then(function() {
+              close();
+              $state.go('app.addressbook');
+            }, function(data, status) {
+              Dialog.alert(l('Warning'), l('An error occured while deleting the card "%{0}".',
+                                           card.$fullname()));
+            });
+        });
+    };
+
+    this.toggleRawSource = function ($event) {
+      if (!this.showRawSource && !this.rawSource) {
+        Card.$$resource.post(this.currentFolder.id + '/' + this.card.id, "raw").then(function(data) {
+          vm.rawSource = data;
+          vm.showRawSource = true;
+        });
+      }
+      else {
+        this.showRawSource = !this.showRawSource;
+      }
+    };
+  }
+
+  angular
+    .module('SOGo.ContactsUI')
+    .controller('CardController', CardController);
+})();
+/* -*- Mode: javascript; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+
+(function() {
+  'use strict';
+
+  /**
+   * @name sgAddress
+   * @memberof ContactsUI
+   * @desc Directive to format a postal address.
+   * @ngInject
+   */
+  function sgAddress() {
+    return {
+      restrict: 'A',
+      scope: { data: '=sgAddress' },
+      controller: ['$scope', function($scope) {
+        $scope.addressLines = function(data) {
+          var lines = [],
+              locality_region = [];
+          if (data.street) lines.push(data.street);
+          if (data.street2) lines.push(data.street2);
+          if (data.locality) locality_region.push(data.locality);
+          if (data.region) locality_region.push(data.region);
+          if (locality_region.length > 0) lines.push(locality_region.join(', '));
+          if (data.country) lines.push(data.country);
+          if (data.postalcode) lines.push(data.postalcode);
+          return lines.join('<br>');
+        };
+      }],
+      template: '<address ng-bind-html="addressLines(data)"></address>'
+    };
+  }
+  
+  angular
+    .module('SOGo.Common')
+    .directive('sgAddress', sgAddress);
+})();

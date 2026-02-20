@@ -114,27 +114,52 @@
 
       this.mailbox.setHighlightWords([]);
 
-      if (Mailbox.selectedFolder) {
-        if (Mailbox.$virtualMode) {
-          Mailbox.$virtualMode = false;
-          Mailbox.$virtualPath = false;
-          $rootScope.$broadcast('resetMailAdvancedSearchPanel'); // Reset advanced search panel (broadcast event to MailboxesController)
-          if (Mailbox.selectedFolder.$mailboxes && Mailbox.selectedFolder.$mailboxes.length > 0) {
-            Mailbox.selectedFolder.$reset({ filter: true, unseenCount: Mailbox.selectedFolder.$mailboxes[0].unseenCount });
-          }
-        } else {
-          Mailbox.selectedFolder.$reset({ filter: true, unseenCount: Mailbox.selectedFolder.unseenCount });
-        }
-      }
+      // Step 1: First, refresh ALL counters from server to get actual values
+      if (Account && Account.$$resource) {
+        // Collect all mailbox IDs
+        var allMailboxIds = [];
+        var collectMailboxIds = function(mailboxes) {
+          _.forEach(mailboxes, function(mailbox) {
+            allMailboxIds.push(mailbox.id);
+            if (mailbox.children && mailbox.children.length > 0) {
+              collectMailboxIds(mailbox.children);
+            }
+          });
+        };
+        collectMailboxIds(_this.mailbox.$account.$mailboxes);
 
-      // For inbox, refresh unseenCount from server before transition to prevent stale value flicker
-      if (this.mailbox.type === 'inbox' && Account && Account.$$resource) {
-        Account.$$resource.post('', 'unseenCount', {mailboxes: [this.mailbox.id]}).then(function(data) {
-          // Update inbox unseenCount with fresh value from server
-          if (angular.isDefined(data[_this.mailbox.id])) {
-            _this.mailbox.unseenCount = data[_this.mailbox.id];
+        // Fetch fresh counters for ALL mailboxes
+        Account.$$resource.post('', 'unseenCount', {mailboxes: allMailboxIds}).then(function(data) {
+          // Step 2: Update counters EXCEPT for currently selected folder (to prevent flicker)
+          var currentFolderId = Mailbox.selectedFolder ? Mailbox.selectedFolder.id : null;
+          var updateMailboxCounts = function(mailboxes) {
+            _.forEach(mailboxes, function(mailbox) {
+              // Skip updating current folder to avoid flicker
+              if (mailbox.id === currentFolderId) {
+                return;
+              }
+              if (angular.isDefined(data[mailbox.id])) {
+                mailbox.unseenCount = data[mailbox.id];
+              }
+              if (mailbox.children && mailbox.children.length > 0) {
+                updateMailboxCounts(mailbox.children);
+              }
+            });
+          };
+          updateMailboxCounts(_this.mailbox.$account.$mailboxes);
+
+          // Step 3: Broadcast to update parent folder displays (like inbox)
+          $rootScope.$broadcast('mailbox:unseenCountChanged', _this.mailbox);
+
+          // Step 4: Handle virtual mode reset if needed
+          if (Mailbox.selectedFolder && Mailbox.$virtualMode) {
+            Mailbox.$virtualMode = false;
+            Mailbox.$virtualPath = false;
+            $rootScope.$broadcast('resetMailAdvancedSearchPanel');
           }
-          // Continue with folder selection after counter is updated
+
+          // DO NOT call $reset() to avoid triggering re-render of current folder
+          // Just proceed with folder selection directly
           _this.accountController.selectFolder(_this);
           if ($event) {
             $state.go('mail.account.mailbox', {
@@ -146,7 +171,19 @@
           }
         });
       } else {
-        // For non-inbox folders, proceed normally
+        // Fallback without Account resource
+        if (Mailbox.selectedFolder) {
+          if (Mailbox.$virtualMode) {
+            Mailbox.$virtualMode = false;
+            Mailbox.$virtualPath = false;
+            $rootScope.$broadcast('resetMailAdvancedSearchPanel');
+            if (Mailbox.selectedFolder.$mailboxes && Mailbox.selectedFolder.$mailboxes.length > 0) {
+              Mailbox.selectedFolder.$reset({ filter: true, unseenCount: Mailbox.selectedFolder.$mailboxes[0].unseenCount });
+            }
+          } else {
+            Mailbox.selectedFolder.$reset({ filter: true, unseenCount: Mailbox.selectedFolder.unseenCount });
+          }
+        }
         this.accountController.selectFolder(this);
         if ($event) {
           $state.go('mail.account.mailbox', {

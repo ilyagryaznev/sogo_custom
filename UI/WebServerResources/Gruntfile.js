@@ -22,7 +22,7 @@ module.exports = function(grunt) {
   };
 
   const sass = require('sass');
-  require('time-grunt')(grunt);
+  // require('time-grunt')(grunt); // Temporarily disabled
 
   // Tasks
   grunt.initConfig({
