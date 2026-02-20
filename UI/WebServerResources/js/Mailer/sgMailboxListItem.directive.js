@@ -62,6 +62,22 @@
       this.$element = $element;
       this.editMode = false;
       this.accountController.addMailboxController(this);
+
+      // Listen for unseen count changes in subfolders to update inbox counter
+      var unsubscribe = $rootScope.$on('mailbox:unseenCountChanged', function(_, changedMailbox) {
+        // If this is inbox and a subfolder's count changed, force digest to recalculate displayUnseenCount
+        if ($ctrl.mailbox.type === 'inbox' && changedMailbox !== $ctrl.mailbox) {
+          // Trigger digest cycle safely to update the counter display
+          $timeout(function() {
+            // Empty function - just triggers digest
+          }, 0);
+        }
+      });
+
+      // Clean up listener when directive is destroyed
+      $scope.$on('$destroy', function() {
+        unsubscribe();
+      });
     };
 
 
@@ -91,10 +107,12 @@
 
 
     this.selectFolder = function($event) {
+      var _this = this;
+
       if (this.editMode || this.mailbox == Mailbox.selectedFolder || this.mailbox.isNoSelect())
         return;
-      
-      this.mailbox.setHighlightWords([]);  
+
+      this.mailbox.setHighlightWords([]);
 
       if (Mailbox.selectedFolder) {
         if (Mailbox.$virtualMode) {
@@ -109,14 +127,35 @@
         }
       }
 
-      this.accountController.selectFolder(this);
-      if ($event) {
-        $state.go('mail.account.mailbox', {
-          accountId: this.mailbox.$account.id,
-          mailboxId: encodeUriFilter(encodeUriFilter(this.mailbox.path))
+      // For inbox, refresh unseenCount from server before transition to prevent stale value flicker
+      if (this.mailbox.type === 'inbox' && Account && Account.$$resource) {
+        Account.$$resource.post('', 'unseenCount', {mailboxes: [this.mailbox.id]}).then(function(data) {
+          // Update inbox unseenCount with fresh value from server
+          if (angular.isDefined(data[_this.mailbox.id])) {
+            _this.mailbox.unseenCount = data[_this.mailbox.id];
+          }
+          // Continue with folder selection after counter is updated
+          _this.accountController.selectFolder(_this);
+          if ($event) {
+            $state.go('mail.account.mailbox', {
+              accountId: _this.mailbox.$account.id,
+              mailboxId: encodeUriFilter(encodeUriFilter(_this.mailbox.path))
+            });
+            $event.stopPropagation();
+            $event.preventDefault();
+          }
         });
-        $event.stopPropagation();
-        $event.preventDefault();
+      } else {
+        // For non-inbox folders, proceed normally
+        this.accountController.selectFolder(this);
+        if ($event) {
+          $state.go('mail.account.mailbox', {
+            accountId: this.mailbox.$account.id,
+            mailboxId: encodeUriFilter(encodeUriFilter(this.mailbox.path))
+          });
+          $event.stopPropagation();
+          $event.preventDefault();
+        }
       }
     };
 

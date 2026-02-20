@@ -49,12 +49,13 @@
    * @desc The factory we'll use to register with Angular
    * @returns the Message constructor
    */
-  Message.$factory = ['$q', '$timeout', '$log', 'sgSettings', 'sgMessage_STATUS', 'Resource', 'Preferences', function ($q, $timeout, $log, Settings, Message_STATUS, Resource, Preferences) {
+  Message.$factory = ['$q', '$timeout', '$log', '$rootScope', 'sgSettings', 'sgMessage_STATUS', 'Resource', 'Preferences', function ($q, $timeout, $log, $rootScope, Settings, Message_STATUS, Resource, Preferences) {
     angular.extend(Message, {
       STATUS: Message_STATUS,
       $q: $q,
       $timeout: $timeout,
       $log: $log,
+      $rootScope: $rootScope,
       $$resource: new Resource(Settings.activeUser('folderURL') + 'Mail', Settings.activeUser()),
       $Preferences: Preferences,
       $avatar: angular.bind(Preferences, Preferences.avatar)
@@ -671,6 +672,7 @@
         Message.$timeout(function () {
           _this.isread = false;
           _this.$mailbox.unseenCount++;
+          Message.$rootScope.$broadcast('mailbox:unseenCountChanged', _this.$mailbox);
         });
       });
     else
@@ -678,6 +680,7 @@
         Message.$timeout(function () {
           _this.isread = true;
           _this.$mailbox.unseenCount--;
+          Message.$rootScope.$broadcast('mailbox:unseenCountChanged', _this.$mailbox);
         });
       });
   };
@@ -814,6 +817,7 @@
             Message.$$resource.fetch(_this.$absolutePath(), 'markMessageRead').then(function () {
               _this.isread = true;
               _this.$mailbox.unseenCount--;
+              Message.$rootScope.$broadcast('mailbox:unseenCountChanged', _this.$mailbox);
             });
           }, Message.$Preferences.defaults.SOGoMailAutoMarkAsReadDelay * 1000);
       }
@@ -1069,6 +1073,7 @@
             Message.$$resource.fetch(_this.$absolutePath(), 'markMessageRead').then(function () {
               _this.isread = true;
               _this.$mailbox.unseenCount--;
+              Message.$rootScope.$broadcast('mailbox:unseenCountChanged', _this.$mailbox);
             });
           }, Message.$Preferences.defaults.SOGoMailAutoMarkAsReadDelay * 1000);
       }
@@ -1076,6 +1081,7 @@
         // Message as already been marked read on the server
         _this.isread = true;
         _this.$mailbox.unseenCount--;
+        Message.$rootScope.$broadcast('mailbox:unseenCountChanged', _this.$mailbox);
       }
       return Message.$timeout(function () {
         delete _this.$parts;

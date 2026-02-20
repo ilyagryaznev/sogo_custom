@@ -1095,6 +1095,13 @@
   Mailbox.prototype.$reset = function(options) {
     var _this = this;
     var account;
+    var currentUnseenCount;
+
+    // For inbox, preserve current unseenCount as it's calculated dynamically from subfolders
+    if (this.type === 'inbox') {
+      currentUnseenCount = this.unseenCount;
+    }
+
     angular.forEach(this.$shadowData, function(value, key) {
       delete _this[key];
     });
@@ -1102,10 +1109,20 @@
     angular.extend(this, this.$shadowData);
     this.$shadowData = this.$omit();
     this.account = account;
-    if (options && options.unseenCount) {
+
+    // Restore unseenCount based on mailbox type
+    if (this.type === 'inbox' && angular.isDefined(currentUnseenCount)) {
+      // For inbox, keep the current value (calculated from subfolders)
+      this.unseenCount = currentUnseenCount;
+    } else if (options && options.unseenCount) {
+      // For other folders, restore from options
       this.unseenCount = options.unseenCount;
+    }
+
+    if (options && options.unseenCount) {
       delete options["unseenCount"];
     }
+
     if (options && options.filter) {
       this.$messages = [];
       this.$visibleMessages = [];
