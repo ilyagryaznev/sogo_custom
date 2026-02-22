@@ -63,14 +63,10 @@
       this.editMode = false;
       this.accountController.addMailboxController(this);
 
-      // Listen for unseen count changes in subfolders to update inbox counter
+      // Listen for unseen count changes in subfolders to update parent folder counters
       var unsubscribe = $rootScope.$on('mailbox:unseenCountChanged', function(_, changedMailbox) {
-        // If this is inbox and a subfolder's count changed, force digest to recalculate displayUnseenCount
-        if ($ctrl.mailbox.type === 'inbox' && changedMailbox !== $ctrl.mailbox) {
-          // Trigger digest cycle safely to update the counter display
-          $timeout(function() {
-            // Empty function - just triggers digest
-          }, 0);
+        if ($ctrl.mailbox.children && $ctrl.mailbox.children.length > 0 && changedMailbox !== $ctrl.mailbox) {
+          $timeout(function() {}, 0);
         }
       });
 

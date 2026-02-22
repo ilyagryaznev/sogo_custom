@@ -29,7 +29,8 @@ docker exec sogo_dev sudo cp \
 
 echo ""
 echo "=== Restarting SOGo ==="
-docker exec sogo_dev sudo /etc/init.d/sogod restart
+docker exec sogo_dev sudo /etc/init.d/sogod stop
+docker exec sogo_dev sudo /etc/init.d/sogod start
 
 echo ""
 echo "✓ Done! JavaScript files updated successfully."

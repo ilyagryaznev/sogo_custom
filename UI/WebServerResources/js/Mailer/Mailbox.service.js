@@ -245,13 +245,15 @@
    * @returns number of unread messages to display
    */
   Mailbox.prototype.$displayUnseenCount = function() {
-    if (this.type != 'inbox' || !this.$account || !this.$account.$mailboxes) {
-      return this.unseenCount || 0;
+    var ownCount = parseInt(this.unseenCount, 10) || 0;
+
+    // If no children, just return own count
+    if (!this.children || this.children.length === 0) {
+      return ownCount || 0;
     }
 
-    // For INBOX: show "direct_count (subfolders_count)"
-    var inboxCount = parseInt(this.unseenCount, 10) || 0,
-        subfoldersCount = 0,
+    // Aggregate unread from all subfolders (excluding spam/junk)
+    var subfoldersCount = 0,
         isSpamFolder = function(mailbox) {
           if (!mailbox)
             return false;
@@ -270,17 +272,14 @@
           });
         };
 
-    // Count unread in subfolders only (not including INBOX itself)
-    if (this.children && this.children.length > 0) {
-      visitSubfolders(this.children);
-    }
+    visitSubfolders(this.children);
 
-    // Return formatted string: "inbox_only (inbox + subfolders)" or just inbox_only
-    var totalCount = inboxCount + subfoldersCount;
+    // Return formatted string: "own (own + subfolders)" or just own
+    var totalCount = ownCount + subfoldersCount;
     if (subfoldersCount > 0) {
-      return inboxCount + ' (' + totalCount + ')';
+      return ownCount + ' (' + totalCount + ')';
     }
-    return inboxCount || 0;
+    return ownCount || 0;
   };
 
   /**
