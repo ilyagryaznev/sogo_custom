@@ -68,6 +68,9 @@
               // Hide loading animation for invisible background refresh
               vm.selectedFolder.$isLoading = false;
 
+              // Refresh unseen counts for ALL folders so sidebar counters stay current
+              Account.refreshUnseenCount($window.unseenCountFolders);
+
               // Cancel the built-in timer again after each refresh
               if (Mailbox.$refreshTimeout) {
                 Mailbox.$timeout.cancel(Mailbox.$refreshTimeout);

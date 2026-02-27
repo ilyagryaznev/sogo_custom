@@ -7,7 +7,10 @@ ENV container=docker \
     LC_ALL=C
 ARG DEBIAN_FRONTEND=noninteractive
 
-ADD dovecot.gpg /etc/apt/keyrings/dovecot.gpg
+RUN apt-get -y update && apt-get -y install ca-certificates curl gnupg && \
+    mkdir -p /etc/apt/keyrings && \
+    curl -fsSL https://repo.dovecot.org/DOVECOT-REPO-GPG | gpg --dearmor -o /etc/apt/keyrings/dovecot.gpg
+
 ADD dovecot.list /etc/apt/sources.list.d
 
 RUN apt-get -y update && apt-get -y install \

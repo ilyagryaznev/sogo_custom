@@ -35,7 +35,11 @@
 
       this.showSubscribedOnly = Preferences.defaults.SOGoMailShowSubscribedFoldersOnly;
 
-      Account.refreshUnseenCount($window.unseenCountFolders);
+      // Delay initial unseen count refresh to ensure mailboxes are fully
+      // initialized (async $unwrapCollection may not have completed yet)
+      $timeout(function() {
+        Account.refreshUnseenCount($window.unseenCountFolders);
+      }, 500);
 
       _registerHotkeys(hotkeys);
 

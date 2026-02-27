@@ -115,46 +115,38 @@
    * @param {array} [string] - the paths of the folders
    */
   Account.refreshUnseenCount = function(folders) {
-    var unseenCountFolders,
-        fetchAllUnseenCountFolders = (Account.$Preferences.defaults.SOGoMailFetchAllUnseenCountFolders === 1),
-        refreshViewCheck = Account.$Preferences.defaults.SOGoRefreshViewCheck;
+    var refreshViewCheck = Account.$Preferences.defaults.SOGoRefreshViewCheck;
 
-    if (fetchAllUnseenCountFolders)
-      unseenCountFolders = [];
-    else if (folders)
-      unseenCountFolders = folders;
-    else
-      throw Error('SOGoMailFetchAllUnseenCountFolders is disabled and no folders list provided');
-
+    // Collect all mailbox IDs; use $flattenMailboxes if available, fall back to
+    // the explicit folders list (from $window.unseenCountFolders)
+    var unseenCountFolders = [];
     _.forEach(Account.$accounts, function(account) {
-      if (fetchAllUnseenCountFolders) {
-        // Include all mailboxes
-        _.forEach(account.$$flattenMailboxes, function(mailbox) {
+      var allMailboxes = account.$flattenMailboxes({ all: true });
+      _.forEach(allMailboxes, function(mailbox) {
+        if (mailbox && mailbox.id) {
           unseenCountFolders.push(mailbox.id);
-        });
-      }
-      else {
-        // Always include the INBOX
-        if (!_.includes(unseenCountFolders, account.id + '/folderINBOX'))
-          unseenCountFolders.push(account.id + '/folderINBOX');
-
-        _.forEach(account.$$flattenMailboxes, function(mailbox) {
-          if (angular.isDefined(mailbox.unseenCount) &&
-              !_.includes(unseenCountFolders, mailbox.id))
-            unseenCountFolders.push(mailbox.id);
-        });
-      }
-    });
-
-    Account.$$resource.post('', 'unseenCount', {mailboxes: unseenCountFolders}).then(function(data) {
-      _.forEach(Account.$accounts, function(account) {
-        _.forEach(account.$$flattenMailboxes, function(mailbox) {
-          if (angular.isDefined(data[mailbox.id])) {
-            mailbox.unseenCount = data[mailbox.id];
-          }
-        });
+        }
       });
     });
+
+    // If $flattenMailboxes returned nothing (mailboxes not yet initialized),
+    // fall back to the folders argument (e.g. $window.unseenCountFolders)
+    if (unseenCountFolders.length === 0 && folders && folders.length > 0) {
+      unseenCountFolders = folders;
+    }
+
+    if (unseenCountFolders.length > 0) {
+      Account.$$resource.post('', 'unseenCount', {mailboxes: unseenCountFolders}).then(function(data) {
+        _.forEach(Account.$accounts, function(account) {
+          var allMailboxes = account.$flattenMailboxes({ all: true });
+          _.forEach(allMailboxes, function(mailbox) {
+            if (mailbox && mailbox.id && angular.isDefined(data[mailbox.id])) {
+              mailbox.unseenCount = data[mailbox.id];
+            }
+          });
+        });
+      });
+    }
 
     if (refreshViewCheck && refreshViewCheck != 'manually') {
       if (Account.$refreshUnseenCount)
