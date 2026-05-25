@@ -121,6 +121,8 @@ NSComparisonResult languageSort(id el1, id el2, void *context);
 - (BOOL) SAML2LogoutEnabled;
 - (NSString *) SAML2LogoutURL;
 
+- (NSString *) mailcowLogoutURL;
+
 - (BOOL) enablePublicAccess;
 
 - (int) maximumFailedLoginCount;

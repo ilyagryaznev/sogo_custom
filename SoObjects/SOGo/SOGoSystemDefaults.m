@@ -867,6 +867,11 @@ NSComparisonResult languageSort(id el1, id el2, void *context)
   return [self stringForKey: @"SOGoSAML2LoginAttribute"];
 }
 
+- (NSString *) mailcowLogoutURL
+{
+  return [self stringForKey: @"SOGoMailcowLogoutURL"];
+}
+
 - (BOOL) enablePublicAccess
 {
   return [self boolForKey: @"SOGoEnablePublicAccess"];

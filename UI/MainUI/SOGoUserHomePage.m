@@ -492,6 +492,32 @@
       [[SOGoCache sharedCache] removeSAML2LoginDumpsForIdentifier: password];
     }      
 #endif
+  else if ([authType isEqualToString: @"mailcow"])
+    {
+      NSString *logoutURL, *baseURL;
+      logoutURL = [sd mailcowLogoutURL];
+      if ([logoutURL length])
+        {
+          container = [[self clientObject] container];
+          baseURL = [container baseURLInContext: context];
+          
+          if ([logoutURL hasPrefix: @"http://"] || [logoutURL hasPrefix: @"https://"])
+            redirectURL = logoutURL;
+          else if ([logoutURL hasPrefix: @"/"])
+            redirectURL = [NSString stringWithFormat: @"%@%@", 
+                          [[baseURL componentsSeparatedByString: @"/SOGo"] objectAtIndex: 0],
+                          logoutURL];
+          else
+            redirectURL = [NSString stringWithFormat: @"%@/%@", 
+                          [[baseURL componentsSeparatedByString: @"/SOGo"] objectAtIndex: 0],
+                          logoutURL];
+        }
+      else
+        {
+          container = [[self clientObject] container];
+          redirectURL = [container baseURLInContext: context];
+        }
+    }
   else
     {
       container = [[self clientObject] container];
