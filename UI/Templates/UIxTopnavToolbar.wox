@@ -56,6 +56,12 @@
       </var:if>
     </md-button>
     <md-button class="md-icon-button"
+               var:ng-click="navButtonClick"
+               ng-href="/user">
+      <md-icon>build</md-icon>
+      <md-tooltip>mailcow <var:string label:value="Preferences"/></md-tooltip>
+    </md-button>
+    <md-button class="md-icon-button"
                ng-disabled="::baseURL.endsWith('/Administration')"
                ng-show="::activeUser.isSuperUser"
                var:ng-click="navButtonClick"
@@ -73,9 +79,8 @@
       <md-tooltip><var:string label:value="Help"/></md-tooltip>
     </md-button>
     <md-button class="md-icon-button"
-               ng-show="::activeUser.path.logoff.length"
-               var:ng-click="navButtonClick"
-               ng-href="{{::activeUser.path.logoff}}">
+               onclick="mc_logout();"
+               ng-href="#">
       <md-icon>settings_power</md-icon>
       <md-tooltip><var:string label:value="Disconnect"/></md-tooltip>
     </md-button>

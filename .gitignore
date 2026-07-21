@@ -22,6 +22,7 @@ UI/WebServerResources/.sass-cache/
 UI/WebServerResources/bower_components/
 UI/WebServerResources/css/
 UI/WebServerResources/js/*.js
+!UI/WebServerResources/js/custom-sogo.js
 UI/WebServerResources/js/*.js.map
 UI/WebServerResources/js/vendor/*.js
 UI/WebServerResources/js/vendor/*.js.map
