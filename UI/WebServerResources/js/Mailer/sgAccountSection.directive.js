@@ -45,9 +45,6 @@
         if (selectedMailboxCtrl)
           selectedMailboxCtrl.unselectFolder();
       }
-      // Close sidenav on small devices
-      if (!$mdMedia(sgConstant['gt-md']))
-        $mdSidenav('left').close();
     };
 
   }

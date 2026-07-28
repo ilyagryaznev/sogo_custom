@@ -84,6 +84,11 @@
       this.inputElement = $element.find('input')[0];
       this.moreOptionsButton = _.last($element.find('md-icon'));
 
+      $element.on('touchmove', clearTouchState);
+      $scope.$on('$destroy', function() {
+        $element.off('touchmove', clearTouchState);
+      });
+
       // Check if router's state has selected a mailbox
       if (Mailbox.selectedFolder !== null && Mailbox.selectedFolder.id == this.mailbox.id) {
         this.accountController.selectFolder(this);
@@ -93,6 +98,16 @@
     this.childLevel = function() {
       return 'sg-child-level-' + this.mailbox.level;
     };
+
+
+    function clearTouchState() {
+      $element.removeClass('md-focused sg-active');
+      if ($element[0].blur)
+        $element[0].blur();
+      var button = $element[0].querySelector('.md-button');
+      if (button && button.blur)
+        button.blur();
+    }
 
 
     this.displayUnseenCount = function() {

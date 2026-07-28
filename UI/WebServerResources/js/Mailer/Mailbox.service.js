@@ -430,13 +430,17 @@
    * @param {boolean} filters.negative - negate the condition
    * @returns a promise of the HTTP operation
    */
-  Mailbox.prototype.$filter = function(sortingAttributes, filters) {
-    var _this = this, action = 'view', options = {};
+  Mailbox.prototype.$filter = function(sortingAttributes, filters, refreshOptions) {
+    var _this = this,
+        action = 'view',
+        options = {},
+        background = refreshOptions && refreshOptions.background;
 
     if (!angular.isDefined(this.unseenCount))
       this.unseenCount = 0;
 
-    this.$isLoading = true;
+    if (!background)
+      this.$isLoading = true;
 
     if (Mailbox.$refreshTimeout)
       Mailbox.$timeout.cancel(Mailbox.$refreshTimeout);
@@ -514,7 +518,7 @@
     }
 
     var futureMailboxData = Mailbox.$$resource.post(this.id, action, options);
-    return this.$unwrap(futureMailboxData);
+    return this.$unwrap(futureMailboxData, refreshOptions);
   };
 
   /**
@@ -1188,8 +1192,10 @@
    * @param {promise} futureMailboxData - a promise of the Mailbox's metadata
    * @returns a promise of the HTTP operation
    */
-  Mailbox.prototype.$unwrap = function(futureMailboxData) {
-    Mailbox.$rootScope.$broadcast('beforeListRefresh');
+  Mailbox.prototype.$unwrap = function(futureMailboxData, refreshOptions) {
+    var background = refreshOptions && refreshOptions.background;
+    if (!background)
+      Mailbox.$rootScope.$broadcast('beforeListRefresh');
     var _this = this,
         deferred = Mailbox.$q.defer();
 
@@ -1313,7 +1319,8 @@
 
         Mailbox.$log.debug('mailbox ' + _this.id + ' ready');
         _this.$isLoading = false;
-        Mailbox.$rootScope.$broadcast('listRefreshed');
+        if (!background)
+          Mailbox.$rootScope.$broadcast('listRefreshed');
         deferred.resolve(_this.$messages);
       });
     }, function(data) {

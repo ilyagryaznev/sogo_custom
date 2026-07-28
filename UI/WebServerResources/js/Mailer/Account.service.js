@@ -121,6 +121,9 @@
     // the explicit folders list (from $window.unseenCountFolders)
     var unseenCountFolders = [];
     _.forEach(Account.$accounts, function(account) {
+      if (!account.$mailboxes)
+        return;
+
       var allMailboxes = account.$flattenMailboxes({ all: true });
       _.forEach(allMailboxes, function(mailbox) {
         if (mailbox && mailbox.id) {
@@ -137,14 +140,8 @@
 
     if (unseenCountFolders.length > 0) {
       Account.$$resource.post('', 'unseenCount', {mailboxes: unseenCountFolders}).then(function(data) {
-        _.forEach(Account.$accounts, function(account) {
-          var allMailboxes = account.$flattenMailboxes({ all: true });
-          _.forEach(allMailboxes, function(mailbox) {
-            if (mailbox && mailbox.id && angular.isDefined(data[mailbox.id])) {
-              mailbox.unseenCount = data[mailbox.id];
-            }
-          });
-        });
+        Account.$unseenCountCache = data;
+        Account.$applyUnseenCounts(data);
       });
     }
 
@@ -153,6 +150,20 @@
         Account.$timeout.cancel(Account.$refreshUnseenCount);
       Account.$refreshUnseenCount = Account.$timeout(angular.bind(this, Account.refreshUnseenCount, folders), refreshViewCheck.timeInterval()*1000);
     }
+  };
+
+  Account.$applyUnseenCounts = function(data) {
+    _.forEach(Account.$accounts, function(account) {
+      if (!account.$mailboxes)
+        return;
+
+      var allMailboxes = account.$flattenMailboxes({ all: true });
+      _.forEach(allMailboxes, function(mailbox) {
+        if (mailbox && mailbox.id && angular.isDefined(data[mailbox.id])) {
+          mailbox.unseenCount = data[mailbox.id];
+        }
+      });
+    });
   };
 
   /**
@@ -254,6 +265,10 @@
           _this.$expanded |= (Account.$accounts.length == 1); // Always expand single account
 
         _this.$flattenMailboxes({reload: true});
+        if (Account.$unseenCountCache) {
+          Account.$applyUnseenCounts(Account.$unseenCountCache);
+        }
+        Account.refreshUnseenCount();
 
         return _this.$mailboxes;
       });

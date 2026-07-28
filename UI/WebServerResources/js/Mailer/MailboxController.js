@@ -13,7 +13,8 @@
         hotkeys = [],
         sortLabels,
         popupWindow = null,
-        msgHeight = 56; // must match md-item-size of md-list-item in UIxMailFolderTemplate
+        msgHeight = 56, // must match md-item-size of md-list-item in UIxMailFolderTemplate
+        messageListScroller = null;
 
     sortLabels = {
       subject: 'Subject',
@@ -36,6 +37,8 @@
       this.allSelected = false;
       this.isLoadingMessage = false;
       this.nextAction = null;
+      this.isMessageListScrolling = false;
+      this.destroyed = false;
 
       if (!Mailbox.$virtualMode)
         this.selectedFolder.getLabels(); // fetch labels from server
@@ -62,11 +65,11 @@
 
           vm.autoRefreshTimer = $timeout(function() {
             if (vm.selectedFolder) {
-              // Use incremental update (with syncToken) for smooth, seamless refresh
-              vm.selectedFolder.$filter();
-
-              // Hide loading animation for invisible background refresh
-              vm.selectedFolder.$isLoading = false;
+              // Avoid touching md-virtual-repeat while the user is scrolling.
+              if (!vm.isMessageListScrolling) {
+                // Use incremental update (with syncToken) without loading state.
+                vm.selectedFolder.$filter(null, null, { background: true });
+              }
 
               // Refresh unseen counts for ALL folders so sidebar counters stay current
               Account.refreshUnseenCount($window.unseenCountFolders);
@@ -83,14 +86,23 @@
       };
 
       startAutoRefresh();
+      $timeout(_watchMessageListScroll, 0);
 
       // Expunge mailbox when leaving the Mail module
       angular.element($window).on('beforeunload', _compactBeforeUnload);
       $scope.$on('$destroy', function() {
+        vm.destroyed = true;
         angular.element($window).off('beforeunload', _compactBeforeUnload);
         // Cancel auto-refresh timer
         if (vm.autoRefreshTimer) {
           $timeout.cancel(vm.autoRefreshTimer);
+        }
+        if (vm.scrollIdleTimer) {
+          $timeout.cancel(vm.scrollIdleTimer);
+        }
+        if (messageListScroller) {
+          messageListScroller.removeEventListener('scroll', _onMessageListScroll);
+          messageListScroller = null;
         }
         // When leaving a subfolder, pre-fetch fresh unseen counts so INBOX
         // counter is accurate before it renders (reduces visible flash)
@@ -195,6 +207,28 @@
       if (Mailbox.$virtualMode)
         return true;
       return vm.selectedFolder.$compact();
+    }
+
+    function _watchMessageListScroll() {
+      messageListScroller = document.querySelector('[ui-view=mailbox] .md-virtual-repeat-scroller');
+      if (!messageListScroller) {
+        messageListScroller = document.querySelector('.md-virtual-repeat-scroller');
+      }
+      if (messageListScroller) {
+        messageListScroller.addEventListener('scroll', _onMessageListScroll);
+      }
+      else if (!vm.destroyed) {
+        $timeout(_watchMessageListScroll, 300);
+      }
+    }
+
+    function _onMessageListScroll() {
+      vm.isMessageListScrolling = true;
+      if (vm.scrollIdleTimer)
+        $timeout.cancel(vm.scrollIdleTimer);
+      vm.scrollIdleTimer = $timeout(function() {
+        vm.isMessageListScrolling = false;
+      }, 800);
     }
 
     this.centerIsClose = function(navController_centerIsClose) {
@@ -774,4 +808,3 @@
     .decorator('mdVirtualRepeatContainerDirective', mdVirtualRepeatContainerDirectiveDecorator);
 
 })();
-

@@ -48,6 +48,11 @@
         },
         true // compare for object equality
       );
+
+      $element.on('touchmove', clearTouchState);
+      $scope.$on('$destroy', function() {
+        $element.off('touchmove', clearTouchState);
+      });
     };
 
 
@@ -76,6 +81,15 @@
       else
         element.classList.add('ng-hide');
     };
+
+    function clearTouchState() {
+      $element.removeClass('md-focused sg-active');
+      if ($element[0].blur)
+        $element[0].blur();
+      var button = $element[0].querySelector('.md-button');
+      if (button && button.blur)
+        button.blur();
+    }
 
     // The following functions are used to store and restore the scroll position of the message list
     // Position is stored and restored through the Mailbox service using broadcasting

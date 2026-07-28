@@ -115,52 +115,51 @@
    * @param {array} [string] - the paths of the folders
    */
   Account.refreshUnseenCount = function(folders) {
-    var unseenCountFolders,
-        fetchAllUnseenCountFolders = (Account.$Preferences.defaults.SOGoMailFetchAllUnseenCountFolders === 1),
-        refreshViewCheck = Account.$Preferences.defaults.SOGoRefreshViewCheck;
+    var refreshViewCheck = Account.$Preferences.defaults.SOGoRefreshViewCheck;
 
-    if (fetchAllUnseenCountFolders)
-      unseenCountFolders = [];
-    else if (folders)
-      unseenCountFolders = folders;
-    else
-      throw Error('SOGoMailFetchAllUnseenCountFolders is disabled and no folders list provided');
-
+    var unseenCountFolders = [];
     _.forEach(Account.$accounts, function(account) {
-      if (fetchAllUnseenCountFolders) {
-        // Include all mailboxes
-        _.forEach(account.$$flattenMailboxes, function(mailbox) {
+      if (!account.$mailboxes)
+        return;
+
+      var allMailboxes = account.$flattenMailboxes({ all: true });
+      _.forEach(allMailboxes, function(mailbox) {
+        if (mailbox && mailbox.id) {
           unseenCountFolders.push(mailbox.id);
-        });
-      }
-      else {
-        // Always include the INBOX
-        if (!_.includes(unseenCountFolders, account.id + '/folderINBOX'))
-          unseenCountFolders.push(account.id + '/folderINBOX');
-
-        _.forEach(account.$$flattenMailboxes, function(mailbox) {
-          if (angular.isDefined(mailbox.unseenCount) &&
-              !_.includes(unseenCountFolders, mailbox.id))
-            unseenCountFolders.push(mailbox.id);
-        });
-      }
-    });
-
-    Account.$$resource.post('', 'unseenCount', {mailboxes: unseenCountFolders}).then(function(data) {
-      _.forEach(Account.$accounts, function(account) {
-        _.forEach(account.$$flattenMailboxes, function(mailbox) {
-          if (angular.isDefined(data[mailbox.id])) {
-            mailbox.unseenCount = data[mailbox.id];
-          }
-        });
+        }
       });
     });
+
+    if (unseenCountFolders.length === 0 && folders && folders.length > 0) {
+      unseenCountFolders = folders;
+    }
+
+    if (unseenCountFolders.length > 0) {
+      Account.$$resource.post('', 'unseenCount', {mailboxes: unseenCountFolders}).then(function(data) {
+        Account.$unseenCountCache = data;
+        Account.$applyUnseenCounts(data);
+      });
+    }
 
     if (refreshViewCheck && refreshViewCheck != 'manually') {
       if (Account.$refreshUnseenCount)
         Account.$timeout.cancel(Account.$refreshUnseenCount);
       Account.$refreshUnseenCount = Account.$timeout(angular.bind(this, Account.refreshUnseenCount, folders), refreshViewCheck.timeInterval()*1000);
     }
+  };
+
+  Account.$applyUnseenCounts = function(data) {
+    _.forEach(Account.$accounts, function(account) {
+      if (!account.$mailboxes)
+        return;
+
+      var allMailboxes = account.$flattenMailboxes({ all: true });
+      _.forEach(allMailboxes, function(mailbox) {
+        if (mailbox && mailbox.id && angular.isDefined(data[mailbox.id])) {
+          mailbox.unseenCount = data[mailbox.id];
+        }
+      });
+    });
   };
 
   /**
@@ -262,6 +261,10 @@
           _this.$expanded |= (Account.$accounts.length == 1); // Always expand single account
 
         _this.$flattenMailboxes({reload: true});
+        if (Account.$unseenCountCache) {
+          Account.$applyUnseenCounts(Account.$unseenCountCache);
+        }
+        Account.refreshUnseenCount();
 
         return _this.$mailboxes;
       });
@@ -1024,13 +1027,17 @@
    * @param {boolean} filters.negative - negate the condition
    * @returns a promise of the HTTP operation
    */
-  Mailbox.prototype.$filter = function(sortingAttributes, filters) {
-    var _this = this, action = 'view', options = {};
+  Mailbox.prototype.$filter = function(sortingAttributes, filters, refreshOptions) {
+    var _this = this,
+        action = 'view',
+        options = {},
+        background = refreshOptions && refreshOptions.background;
 
     if (!angular.isDefined(this.unseenCount))
       this.unseenCount = 0;
 
-    this.$isLoading = true;
+    if (!background)
+      this.$isLoading = true;
 
     if (Mailbox.$refreshTimeout)
       Mailbox.$timeout.cancel(Mailbox.$refreshTimeout);
@@ -1108,7 +1115,7 @@
     }
 
     var futureMailboxData = Mailbox.$$resource.post(this.id, action, options);
-    return this.$unwrap(futureMailboxData);
+    return this.$unwrap(futureMailboxData, refreshOptions);
   };
 
   /**
@@ -1782,8 +1789,10 @@
    * @param {promise} futureMailboxData - a promise of the Mailbox's metadata
    * @returns a promise of the HTTP operation
    */
-  Mailbox.prototype.$unwrap = function(futureMailboxData) {
-    Mailbox.$rootScope.$broadcast('beforeListRefresh');
+  Mailbox.prototype.$unwrap = function(futureMailboxData, refreshOptions) {
+    var background = refreshOptions && refreshOptions.background;
+    if (!background)
+      Mailbox.$rootScope.$broadcast('beforeListRefresh');
     var _this = this,
         deferred = Mailbox.$q.defer();
 
@@ -1907,7 +1916,8 @@
 
         Mailbox.$log.debug('mailbox ' + _this.id + ' ready');
         _this.$isLoading = false;
-        Mailbox.$rootScope.$broadcast('listRefreshed');
+        if (!background)
+          Mailbox.$rootScope.$broadcast('listRefreshed');
         deferred.resolve(_this.$messages);
       });
     }, function(data) {
@@ -3826,7 +3836,8 @@
         hotkeys = [],
         sortLabels,
         popupWindow = null,
-        msgHeight = 56; // must match md-item-size of md-list-item in UIxMailFolderTemplate
+        msgHeight = 56, // must match md-item-size of md-list-item in UIxMailFolderTemplate
+        messageListScroller = null;
 
     sortLabels = {
       subject: 'Subject',
@@ -3849,6 +3860,8 @@
       this.allSelected = false;
       this.isLoadingMessage = false;
       this.nextAction = null;
+      this.isMessageListScrolling = false;
+      this.destroyed = false;
 
       if (!Mailbox.$virtualMode)
         this.selectedFolder.getLabels(); // fetch labels from server
@@ -3875,11 +3888,11 @@
 
           vm.autoRefreshTimer = $timeout(function() {
             if (vm.selectedFolder) {
-              // Use incremental update (with syncToken) for smooth, seamless refresh
-              vm.selectedFolder.$filter();
-
-              // Hide loading animation for invisible background refresh
-              vm.selectedFolder.$isLoading = false;
+              // Avoid touching md-virtual-repeat while the user is scrolling.
+              if (!vm.isMessageListScrolling) {
+                // Use incremental update (with syncToken) without loading state.
+                vm.selectedFolder.$filter(null, null, { background: true });
+              }
 
               // Cancel the built-in timer again after each refresh
               if (Mailbox.$refreshTimeout) {
@@ -3893,14 +3906,23 @@
       };
 
       startAutoRefresh();
+      $timeout(_watchMessageListScroll, 0);
 
       // Expunge mailbox when leaving the Mail module
       angular.element($window).on('beforeunload', _compactBeforeUnload);
       $scope.$on('$destroy', function() {
+        vm.destroyed = true;
         angular.element($window).off('beforeunload', _compactBeforeUnload);
         // Cancel auto-refresh timer
         if (vm.autoRefreshTimer) {
           $timeout.cancel(vm.autoRefreshTimer);
+        }
+        if (vm.scrollIdleTimer) {
+          $timeout.cancel(vm.scrollIdleTimer);
+        }
+        if (messageListScroller) {
+          messageListScroller.removeEventListener('scroll', _onMessageListScroll);
+          messageListScroller = null;
         }
         // When leaving a subfolder, pre-fetch fresh unseen counts so INBOX
         // counter is accurate before it renders (reduces visible flash)
@@ -4005,6 +4027,28 @@
       if (Mailbox.$virtualMode)
         return true;
       return vm.selectedFolder.$compact();
+    }
+
+    function _watchMessageListScroll() {
+      messageListScroller = document.querySelector('[ui-view=mailbox] .md-virtual-repeat-scroller');
+      if (!messageListScroller) {
+        messageListScroller = document.querySelector('.md-virtual-repeat-scroller');
+      }
+      if (messageListScroller) {
+        messageListScroller.addEventListener('scroll', _onMessageListScroll);
+      }
+      else if (!vm.destroyed) {
+        $timeout(_watchMessageListScroll, 300);
+      }
+    }
+
+    function _onMessageListScroll() {
+      vm.isMessageListScrolling = true;
+      if (vm.scrollIdleTimer)
+        $timeout.cancel(vm.scrollIdleTimer);
+      vm.scrollIdleTimer = $timeout(function() {
+        vm.isMessageListScrolling = false;
+      }, 800);
     }
 
     this.centerIsClose = function(navController_centerIsClose) {
@@ -6505,9 +6549,6 @@
         if (selectedMailboxCtrl)
           selectedMailboxCtrl.unselectFolder();
       }
-      // Close sidenav on small devices
-      if (!$mdMedia(sgConstant['gt-md']))
-        $mdSidenav('left').close();
     };
 
   }
@@ -6666,6 +6707,11 @@
       this.inputElement = $element.find('input')[0];
       this.moreOptionsButton = _.last($element.find('md-icon'));
 
+      $element.on('touchmove', clearTouchState);
+      $scope.$on('$destroy', function() {
+        $element.off('touchmove', clearTouchState);
+      });
+
       // Check if router's state has selected a mailbox
       if (Mailbox.selectedFolder !== null && Mailbox.selectedFolder.id == this.mailbox.id) {
         this.accountController.selectFolder(this);
@@ -6675,6 +6721,16 @@
     this.childLevel = function() {
       return 'sg-child-level-' + this.mailbox.level;
     };
+
+
+    function clearTouchState() {
+      $element.removeClass('md-focused sg-active');
+      if ($element[0].blur)
+        $element[0].blur();
+      var button = $element[0].querySelector('.md-button');
+      if (button && button.blur)
+        button.blur();
+    }
 
 
     this.displayUnseenCount = function() {
@@ -7087,6 +7143,11 @@
         },
         true // compare for object equality
       );
+
+      $element.on('touchmove', clearTouchState);
+      $scope.$on('$destroy', function() {
+        $element.off('touchmove', clearTouchState);
+      });
     };
 
 
@@ -7115,6 +7176,15 @@
       else
         element.classList.add('ng-hide');
     };
+
+    function clearTouchState() {
+      $element.removeClass('md-focused sg-active');
+      if ($element[0].blur)
+        $element[0].blur();
+      var button = $element[0].querySelector('.md-button');
+      if (button && button.blur)
+        button.blur();
+    }
 
     // The following functions are used to store and restore the scroll position of the message list
     // Position is stored and restored through the Mailbox service using broadcasting

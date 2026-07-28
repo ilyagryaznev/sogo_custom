@@ -62,6 +62,26 @@
   }
 }
 
+@media not all and #{$media-pointer} {
+  md-sidenav md-list-item.sg-mailbox-list-item {
+    &:hover:not(.sg-selected),
+    &:focus:not(.sg-selected),
+    &.md-focused:not(.sg-selected),
+    &.sg-active:not(.sg-selected) {
+      background-color: transparent;
+    }
+  }
+
+  .view-list .sg-section-list md-list-item.sg-message-list-item {
+    &:hover:not(.md-bg),
+    &:focus:not(.md-bg),
+    &.md-focused:not(.md-bg),
+    &.sg-active:not(.md-bg) {
+      background-color: transparent;
+    }
+  }
+}
+
 .sg-skeleton {
   background-color: inherit;
   sg-avatar-image, .sg-category-dot-container, md-icon, .sg-tile-btn {
