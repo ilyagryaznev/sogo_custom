@@ -82,6 +82,18 @@
   }
 }
 
+// Angular Material's hover state can remain active after a touch scroll in a
+// virtual list. Suppress that visual state only on message-row buttons.
+.view-list .sg-section-list md-list-item.sg-message-list-item .md-button {
+  &:active,
+  &:focus,
+  &:hover,
+  &.md-focused,
+  &.sg-active {
+    background-color: transparent !important;
+  }
+}
+
 .sg-skeleton {
   background-color: inherit;
   sg-avatar-image, .sg-category-dot-container, md-icon, .sg-tile-btn {
